@@ -116,16 +116,14 @@ cmd_mount() {
 
 	# Pipe blkid directly into loop (Subshell created, but we don't need vars to persist outside)
 	blkid | grep UUID | while read -r blkid_line; do
+	echo "[DEBUG] processing line: $blkid_line"
 	dev_path=$(echo "$blkid_line" | cut -d: -f1)
-
-	# Skip already mounted physical devices
-	if awk '{print $1}' /proc/mounts | grep -qxF "$dev_path"; then
-		continue
-	fi
 
 	# POSIX extraction using sed
 	loop_uuid=$(echo "$blkid_line" | sed -n 's/.*UUID="\([^"]*\)".*/\1/p')
 	loop_label=$(echo "$blkid_line" | sed -n 's/.*LABEL="\([^"]*\)".*/\1/p')
+	
+	echo "[DEBUG] dev_path=$dev_path, loop_uuid=$loop_uuid, loop_label=$loop_label"
 
 	# Config override
 	if [ -z "$loop_label" ] && [ -n "$loop_uuid" ]; then
@@ -135,8 +133,13 @@ cmd_mount() {
 
 	# STRICT FILTER using case (POSIX alternative to regex)
 	case "$loop_label" in
-		"$LABEL_PREFIX"|"$LABEL_PREFIX".*) ;;
-		*) continue ;;
+		"$LABEL_PREFIX"|"$LABEL_PREFIX".*) 
+			echo "[DEBUG] label matched prefix!"
+			;;
+		*) 
+			echo "[DEBUG] label skipped"
+			continue 
+			;;
 	esac
 
 	short_uuid=$(echo "$loop_uuid" | cut -c 1-8)
