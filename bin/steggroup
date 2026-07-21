@@ -91,33 +91,27 @@ def main():
                 os.makedirs(path, exist_ok=True)
                 print(f"Created directory: /{folder}")
                 
-            # Check for existing global configurations across all mapped groups
-            existing_globals = glob.glob("/stegos/conf/*/global.json")
-            if not existing_globals:
-                print("No existing global configurations found in any active group.")
-                base_domain = args.domain
-                timezone = args.timezone
-                
-                print("Seeding a default global.json into the new group...")
-                if not args.non_interactive:
-                    if not base_domain:
-                        base_domain = input("Enter base domain [default: localhost]: ").strip() or "localhost"
-                    if not timezone:
-                        timezone = input("Enter timezone [default: UTC]: ").strip() or "UTC"
-                else:
-                    if not base_domain: base_domain = "localhost"
-                    if not timezone: timezone = "UTC"
-                    
-                default_global = {
-                    "base_domain": base_domain,
-                    "timezone": timezone
-                }
-                global_path = os.path.join(tmp_mnt, "conf", "global.json")
-                with open(global_path, "w") as f:
-                    json.dump(default_global, f, indent=4)
-                print(f"Seeded: {global_path}")
+            base_domain = args.domain
+            timezone = args.timezone
+            
+            print("Seeding a default global.json into the new group...")
+            if not args.non_interactive:
+                if not base_domain:
+                    base_domain = input("Enter base domain [default: localhost]: ").strip() or "localhost"
+                if not timezone:
+                    timezone = input("Enter timezone [default: UTC]: ").strip() or "UTC"
             else:
-                print("An existing global.json was detected in another group. Skipping global config seeding.")
+                if not base_domain: base_domain = "localhost"
+                if not timezone: timezone = "UTC"
+                
+            default_global = {
+                "base_domain": base_domain,
+                "timezone": timezone
+            }
+            global_path = os.path.join(tmp_mnt, "conf", "global.json")
+            with open(global_path, "w") as f:
+                json.dump(default_global, f, indent=4)
+            print(f"Seeded: {global_path}")
                 
             # Ownership adjustment for stegOS standard user if needed
             # In standard stegOS, the default user is 'steguser'

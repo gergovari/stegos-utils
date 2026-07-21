@@ -122,6 +122,8 @@ class LifecycleManager:
             cmd.append("ps")
         elif action == "logs":
             cmd.append("logs")
+        elif action == "pull":
+            cmd.append("pull")
         else:
             print(f"[{pkg}] Unknown action '{action}'")
             return
@@ -136,7 +138,7 @@ class LifecycleManager:
 
 def main():
     parser = argparse.ArgumentParser(description="stegOS Runtime Orchestrator")
-    parser.add_argument("action", choices=["start", "stop", "status", "logs"], help="Action to perform")
+    parser.add_argument("action", choices=["start", "stop", "status", "logs", "pull"], help="Action to perform")
     parser.add_argument("package", nargs="?", help="Specific package to control (optional, controls all if omitted)")
     parser.add_argument("--group", help="Target Stegmap group (optional if only one exists)")
     

@@ -69,6 +69,16 @@ class CapabilityManager:
         }
         self._save()
 
+    def unregister_provider(self, pkg_name):
+        to_delete = []
+        for cap, data in self.state.items():
+            if data.get("provider") == pkg_name:
+                to_delete.append(cap)
+        for cap in to_delete:
+            del self.state[cap]
+        if to_delete:
+            self._save()
+
     def get_provider(self, cap_name):
         return self.state.get(cap_name)
 
@@ -443,9 +453,19 @@ def main():
     install_p.add_argument("--reconfigure", action="store_true", help="Force prompts")
     install_p.add_argument("--non-interactive", action="store_true", help="Abort instead of prompting")
     
-    # UPDATE command
-    update_p = subparsers.add_parser("update", help="Update all packages in a group based on current config")
-    update_p.add_argument("--group", help="Target Stegmap group (optional if only one exists)")
+    # RECONFIGURE command
+    reconfigure_p = subparsers.add_parser("reconfigure", help="Regenerate configuration files for all packages in a group")
+    reconfigure_p.add_argument("--group", help="Target Stegmap group (optional if only one exists)")
+
+    # REMOVE command
+    remove_p = subparsers.add_parser("remove", help="Remove a package instance")
+    remove_p.add_argument("instance_id", help="Instance ID to remove")
+    remove_p.add_argument("--group", help="Target Stegmap group (optional if only one exists)")
+
+    # UPGRADE command
+    upgrade_p = subparsers.add_parser("upgrade", help="Upgrade packages and pull latest images")
+    upgrade_p.add_argument("instance_id", nargs="?", help="Instance ID to upgrade (defaults to all)")
+    upgrade_p.add_argument("--group", help="Target Stegmap group (optional if only one exists)")
 
     args = parser.parse_args()
     
@@ -460,9 +480,9 @@ def main():
         engine.process_package(pkg_dir, cli_conf, args.reconfigure, args.non_interactive, args.id)
         print(f"Successfully installed {args.package_name} as {args.id if args.id else args.package_name}!")
         
-    elif args.command == "update":
+    elif args.command == "reconfigure":
         # Scan containers directory for all installed instances
-        updated = 0
+        reconfigured = 0
         for d in os.listdir(engine.cont_dir):
             state_file = os.path.join(engine.cont_dir, d, ".stegpkg-state.json")
             if os.path.isfile(state_file):
@@ -473,11 +493,59 @@ def main():
                     try:
                         pkg_dir = engine.find_package_dir(pkg_name)
                         engine.process_package(pkg_dir, cli_conf={}, reconfigure=False, non_interactive=True, instance_id=d)
-                        updated += 1
+                        reconfigured += 1
                     except SystemExit:
-                        print(f"Warning: Could not update package '{pkg_name}' for instance '{d}'")
+                        print(f"Warning: Could not reconfigure package '{pkg_name}' for instance '{d}'")
                         continue
-        print(f"Successfully updated {updated} instances in group {engine.group_name}.")
+        print(f"Successfully reconfigured {reconfigured} instances in group {engine.group_name}.")
+        
+    elif args.command == "remove":
+        instance_dir = os.path.join(engine.cont_dir, args.instance_id)
+        if not os.path.isdir(instance_dir):
+            print(f"Error: Instance '{args.instance_id}' not found in group '{engine.group_name}'.")
+            sys.exit(1)
+            
+        print(f"Stopping instance '{args.instance_id}'...")
+        try:
+            subprocess.run(["stegctl", "stop", args.instance_id, "--group", engine.group_name], check=True)
+        except subprocess.CalledProcessError:
+            print("Warning: Failed to stop instance cleanly. Proceeding with removal...")
+            
+        engine.cap_manager.unregister_provider(args.instance_id)
+        
+        import shutil
+        shutil.rmtree(instance_dir)
+        
+        import glob
+        conf_files = glob.glob(os.path.join(engine.conf_dir, f"*-{args.instance_id}.json"))
+        for cf in conf_files:
+            os.remove(cf)
+            
+        print(f"Successfully removed instance '{args.instance_id}'.")
+        
+    elif args.command == "upgrade":
+        instances = [args.instance_id] if args.instance_id else os.listdir(engine.cont_dir)
+        
+        upgraded = 0
+        for d in instances:
+            state_file = os.path.join(engine.cont_dir, d, ".stegpkg-state.json")
+            if os.path.isfile(state_file):
+                with open(state_file, "r") as f:
+                    state = json.load(f)
+                pkg_name = state.get("package")
+                if pkg_name:
+                    try:
+                        pkg_dir = engine.find_package_dir(pkg_name)
+                        engine.process_package(pkg_dir, cli_conf={}, reconfigure=False, non_interactive=True, instance_id=d)
+                        print(f"[{d}] Pulling latest images...")
+                        subprocess.run(["stegctl", "pull", d, "--group", engine.group_name], check=True)
+                        print(f"[{d}] Restarting instance...")
+                        subprocess.run(["stegctl", "start", d, "--group", engine.group_name], check=True)
+                        upgraded += 1
+                    except Exception as e:
+                        print(f"Warning: Could not upgrade package '{pkg_name}' for instance '{d}': {e}")
+                        continue
+        print(f"Successfully upgraded {upgraded} instances in group {engine.group_name}.")
 
 if __name__ == "__main__":
     main()
