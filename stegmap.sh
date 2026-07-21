@@ -106,7 +106,9 @@ cmd_mount() {
 	mkdir -p "$STEGOS_ROOT" 2>/dev/null
 	if ! grep -q "[[:space:]]${STEGOS_ROOT}[[:space:]]" /proc/mounts; then
 		mount_opts="mode=0755"
-		[ -n "$SELINUX_TMPFS_CTX" ] && mount_opts="${mount_opts},${SELINUX_TMPFS_CTX}"
+		if [ -n "$SELINUX_TMPFS_CTX" ]; then
+			mount_opts="${mount_opts},${SELINUX_TMPFS_CTX}"
+		fi
 
 		if ! mount -t tmpfs -o "$mount_opts" tmpfs "$STEGOS_ROOT"; then
 			log_fatal "Failed to establish tmpfs on $STEGOS_ROOT."
@@ -116,15 +118,12 @@ cmd_mount() {
 
 	# Pipe blkid directly into loop (Subshell created, but we don't need vars to persist outside)
 	blkid | grep UUID | while read -r blkid_line; do
-	echo "[DEBUG] processing line: $blkid_line"
 	dev_path=$(echo "$blkid_line" | cut -d: -f1)
 
 	# POSIX extraction using sed
 	loop_uuid=$(echo "$blkid_line" | sed -n 's/.*UUID="\([^"]*\)".*/\1/p')
 	loop_label=$(echo "$blkid_line" | sed -n 's/.*LABEL="\([^"]*\)".*/\1/p')
 	
-	echo "[DEBUG] dev_path=$dev_path, loop_uuid=$loop_uuid, loop_label=$loop_label"
-
 	# Config override
 	if [ -z "$loop_label" ] && [ -n "$loop_uuid" ]; then
 		fallback_label=$(get_config_label "$loop_uuid")
@@ -133,13 +132,8 @@ cmd_mount() {
 
 	# STRICT FILTER using case (POSIX alternative to regex)
 	case "$loop_label" in
-		"$LABEL_PREFIX"|"$LABEL_PREFIX".*) 
-			echo "[DEBUG] label matched prefix!"
-			;;
-		*) 
-			echo "[DEBUG] label skipped"
-			continue 
-			;;
+		"$LABEL_PREFIX"|"$LABEL_PREFIX".*) ;;
+		*) continue ;;
 	esac
 
 	short_uuid=$(echo "$loop_uuid" | cut -c 1-8)
@@ -156,7 +150,9 @@ cmd_mount() {
 
 	if ! grep -q "[[:space:]]${base_mnt}[[:space:]]" /proc/mounts; then
 		drive_opts="rw"
-		[ -n "$SELINUX_DRIVE_CTX" ] && drive_opts="${drive_opts},${SELINUX_DRIVE_CTX}"
+		if [ -n "$SELINUX_DRIVE_CTX" ]; then
+			drive_opts="${drive_opts},${SELINUX_DRIVE_CTX}"
+		fi
 
 		if ! mount -o "$drive_opts" "$dev_path" "$base_mnt"; then
 			log_error "Failed to mount physical device $dev_path. Skipping."
