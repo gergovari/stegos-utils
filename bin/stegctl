@@ -9,13 +9,29 @@ STEGOS_ROOT = os.environ.get("STEGOS_ROOT", "/stegos")
 
 class GroupManager:
     @staticmethod
-    def resolve_group(group_prefix):
+    def resolve_group(group_prefix=None):
         containers_base = os.path.join(STEGOS_ROOT, "containers")
         if not os.path.isdir(containers_base):
-            return group_prefix
+            if group_prefix:
+                return group_prefix
+            else:
+                print("Error: No groups exist and no group specified.")
+                sys.exit(1)
+        
+        all_groups = os.listdir(containers_base)
+        
+        if group_prefix is None:
+            if len(all_groups) == 1:
+                return all_groups[0]
+            elif len(all_groups) > 1:
+                print(f"Error: Multiple groups exist. You must specify --group. Available: {all_groups}")
+                sys.exit(1)
+            else:
+                print("Error: No groups exist and no group specified.")
+                sys.exit(1)
         
         matches = []
-        for d in os.listdir(containers_base):
+        for d in all_groups:
             if d == group_prefix or d.startswith(f"{group_prefix}_"):
                 matches.append(d)
                 
@@ -32,12 +48,42 @@ class LifecycleManager:
         self.group_name = GroupManager.resolve_group(group_prefix)
         self.cont_dir = os.path.join(STEGOS_ROOT, "containers", self.group_name)
 
-    def execute(self, action, package_name=None):
+    def execute(self, action, package_name=None, extra_args=None):
+        if extra_args is None:
+            extra_args = []
+            
         if not os.path.isdir(self.cont_dir):
             print(f"Error: Group directory '{self.cont_dir}' not found.")
             sys.exit(1)
 
-        packages = [package_name] if package_name else os.listdir(self.cont_dir)
+        if package_name:
+            target_path = os.path.join(self.cont_dir, package_name)
+            if os.path.isdir(target_path):
+                packages = [package_name]
+            else:
+                import json
+                matched = []
+                for d in os.listdir(self.cont_dir):
+                    state_file = os.path.join(self.cont_dir, d, ".stegpkg-state.json")
+                    if os.path.isfile(state_file):
+                        try:
+                            with open(state_file, "r") as f:
+                                state = json.load(f)
+                            if state.get("package") == package_name:
+                                matched.append(d)
+                        except:
+                            pass
+                
+                if len(matched) == 1:
+                    packages = matched
+                elif len(matched) > 1:
+                    print(f"Error: Multiple instances of '{package_name}' found. Please specify instance ID instead: {matched}")
+                    sys.exit(1)
+                else:
+                    print(f"Error: No instance or package named '{package_name}' found in group '{self.group_name}'.")
+                    sys.exit(1)
+        else:
+            packages = os.listdir(self.cont_dir)
         
         for pkg in packages:
             pkg_path = os.path.join(self.cont_dir, pkg)
@@ -55,11 +101,11 @@ class LifecycleManager:
                 
             deployer = state.get("deployer")
             if deployer == "docker-compose":
-                self._handle_docker_compose(action, pkg, pkg_path)
+                self._handle_docker_compose(action, pkg, pkg_path, extra_args)
             else:
                 print(f"[{pkg}] Warning: Unknown deployer '{deployer}'")
                 
-    def _handle_docker_compose(self, action, pkg, pkg_path):
+    def _handle_docker_compose(self, action, pkg, pkg_path, extra_args):
         compose_file = os.path.join(pkg_path, "docker-compose.yml")
         if not os.path.isfile(compose_file):
             print(f"[{pkg}] Error: docker-compose.yml missing.")
@@ -74,9 +120,14 @@ class LifecycleManager:
             cmd.append("down")
         elif action == "status":
             cmd.append("ps")
+        elif action == "logs":
+            cmd.append("logs")
         else:
             print(f"[{pkg}] Unknown action '{action}'")
             return
+            
+        if extra_args:
+            cmd.extend(extra_args)
             
         try:
             subprocess.run(cmd, check=True)
@@ -85,14 +136,14 @@ class LifecycleManager:
 
 def main():
     parser = argparse.ArgumentParser(description="stegOS Runtime Orchestrator")
-    parser.add_argument("action", choices=["start", "stop", "status"], help="Action to perform")
+    parser.add_argument("action", choices=["start", "stop", "status", "logs"], help="Action to perform")
     parser.add_argument("package", nargs="?", help="Specific package to control (optional, controls all if omitted)")
-    parser.add_argument("--group", required=True, help="Target Stegmap group")
+    parser.add_argument("--group", help="Target Stegmap group (optional if only one exists)")
     
-    args = parser.parse_args()
+    args, extra = parser.parse_known_args()
     
     manager = LifecycleManager(args.group)
-    manager.execute(args.action, args.package)
+    manager.execute(args.action, args.package, extra)
 
 if __name__ == "__main__":
     main()
