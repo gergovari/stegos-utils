@@ -1,0 +1,394 @@
+#!/usr/bin/env python3
+import os
+import sys
+import argparse
+import yaml
+import jsonschema
+import json
+import shutil
+from jinja2 import Environment, FileSystemLoader
+
+STEGOS_ROOT = os.environ.get("STEGOS_ROOT", "/stegos")
+
+class GroupManager:
+    @staticmethod
+    def resolve_group(group_prefix):
+        containers_base = os.path.join(STEGOS_ROOT, "containers")
+        if not os.path.isdir(containers_base):
+            return group_prefix
+        
+        matches = []
+        for d in os.listdir(containers_base):
+            if d == group_prefix or d.startswith(f"{group_prefix}_"):
+                matches.append(d)
+                
+        if len(matches) == 1:
+            return matches[0]
+        elif len(matches) > 1:
+            print(f"Error: Multiple groups match '{group_prefix}': {matches}")
+            sys.exit(1)
+        
+        # If 0 matches, assume the name literally (stegmap might create it later)
+        return group_prefix
+
+class CapabilityManager:
+    def __init__(self, conf_dir):
+        self.state_file = os.path.join(conf_dir, "capabilities.json")
+        self.state = self._load()
+
+    def _load(self):
+        if os.path.isfile(self.state_file):
+            with open(self.state_file, "r") as f:
+                return json.load(f)
+        return {}
+
+    def _save(self):
+        with open(self.state_file, "w") as f:
+            json.dump(self.state, f, indent=4)
+
+    def register_provider(self, cap_name, pkg_name, injector_rules):
+        self.state[cap_name] = {
+            "provider": pkg_name,
+            "injector": injector_rules
+        }
+        self._save()
+
+    def get_provider(self, cap_name):
+        return self.state.get(cap_name)
+
+class ConfigResolver:
+    @staticmethod
+    def resolve(schema, pkg_conf, global_conf, cli_conf, reconfigure, non_interactive):
+        final_conf = {}
+        properties = schema.get("properties", {})
+        required = schema.get("required", [])
+        
+        needs_prompt = False
+        for key, prop in properties.items():
+            if key in cli_conf:
+                continue
+            if not reconfigure and key in pkg_conf:
+                continue
+            if "default" not in prop and key not in pkg_conf and key not in cli_conf:
+                 needs_prompt = True
+
+        if needs_prompt and non_interactive:
+            print("Error: Missing required configuration values, and --non-interactive is set.")
+            sys.exit(1)
+            
+        if needs_prompt:
+            print("\n--- Configuration Required ---")
+            
+        for key, prop in properties.items():
+            if key in cli_conf:
+                final_conf[key] = cli_conf[key]
+                continue
+            elif not reconfigure and key in pkg_conf:
+                final_conf[key] = pkg_conf[key]
+                continue
+                
+            desc = prop.get("description", "")
+            
+            # Default determination (Strictly separate from global_conf)
+            default = ""
+            if key in pkg_conf:
+                default = pkg_conf[key]
+            elif "default" in prop:
+                default = prop["default"]
+                
+            is_req = key in required
+            
+            if non_interactive:
+                if default != "":
+                    final_conf[key] = default
+                    continue
+                elif is_req:
+                    print(f"Error: Missing required value for '{key}'")
+                    sys.exit(1)
+                else:
+                    continue
+            
+            prompt_text = f"{key}"
+            if desc: prompt_text += f" ({desc})"
+            if default != "": prompt_text += f" [default: {default}]"
+            prompt_text += ": "
+
+            while True:
+                user_input = input(prompt_text)
+                if not user_input and default != "":
+                    user_val = default
+                elif not user_input and is_req:
+                    print("This field is required.")
+                    continue
+                elif not user_input and not is_req:
+                    user_val = None
+                    break
+                else:
+                    user_val = user_input
+                
+                val_type = prop.get("type", "string")
+                if user_val is not None:
+                    try:
+                        if val_type == "integer":
+                            user_val = int(user_val)
+                        elif val_type == "number":
+                            user_val = float(user_val)
+                        elif val_type == "boolean":
+                            user_val = str(user_val).lower() in ("true", "1", "yes", "y")
+                    except ValueError:
+                        print(f"Invalid type. Expected {val_type}.")
+                        continue
+                    
+                if user_val is not None:
+                    final_conf[key] = user_val
+                break
+                
+        if needs_prompt:
+            print("------------------------------\n")
+            
+        return final_conf
+
+class DeployerBase:
+    def __init__(self, name, config, pkg_dir, out_dir, env, final_conf, global_conf, manifest):
+        self.name = name
+        self.config = config
+        self.pkg_dir = pkg_dir
+        self.out_dir = out_dir
+        self.env = env
+        self.final_conf = final_conf
+        self.global_conf = global_conf
+        self.manifest = manifest
+
+    def deploy(self, cap_manager):
+        raise NotImplementedError
+        
+    def _process_skeleton(self, skeletons):
+        for skel in skeletons:
+            src = skel.get("src")
+            dest = skel.get("dest", "./")
+            if not src:
+                continue
+            src_path = os.path.join(self.pkg_dir, src)
+            if not os.path.isdir(src_path):
+                print(f"Warning: Skeleton src '{src}' not found.")
+                continue
+            dest_base = os.path.normpath(os.path.join(self.out_dir, dest))
+            if not dest_base.startswith(self.out_dir):
+                continue
+            for root, dirs, files in os.walk(src_path):
+                rel_dir = os.path.relpath(root, src_path)
+                target_dir = dest_base if rel_dir == "." else os.path.join(dest_base, rel_dir)
+                os.makedirs(target_dir, exist_ok=True)
+                for f in files:
+                    src_file = os.path.join(root, f)
+                    target_file = os.path.join(target_dir, f)
+                    if os.path.exists(target_file):
+                        continue
+                    shutil.copy2(src_file, target_file)
+
+class DockerComposeDeployer(DeployerBase):
+    def deploy(self, cap_manager):
+        skeletons = self.config.get("skeleton", [])
+        if skeletons:
+            self._process_skeleton(skeletons)
+            
+        # Compute exports
+        exports_raw = self.manifest.get("capabilities", {}).get("exports", {})
+        exports = {}
+        for k, v in exports_raw.items():
+            if isinstance(v, str):
+                t = self.env.from_string(v)
+                exports[k] = t.render(config=self.final_conf, global_config=self.global_conf)
+            else:
+                exports[k] = v
+                
+                # Compute injected_env from capabilities
+        consumes = self.manifest.get("capabilities", {}).get("consumes", [])
+        injected_env = {}
+        for cap in consumes:
+            provider_info = cap_manager.get_provider(cap)
+            if provider_info:
+                injectors = provider_info.get("injectors", {})
+                dc_injector = injectors.get("docker-compose", {})
+                env_rules = dc_injector.get("env", {})
+                for ek, ev in env_rules.items():
+                    t = self.env.from_string(ev)
+                    val = t.render(consumer={"config": self.final_conf, "exports": exports})
+                    injected_env[ek] = val
+
+        # Process Templates
+        templates = self.config.get("templates", [{"src": "docker-compose.yml.j2", "dest": "docker-compose.yml"}])
+        for t in templates:
+            src = t.get("src")
+            dest = t.get("dest")
+            if src and dest:
+                if not os.path.exists(os.path.join(self.pkg_dir, src)):
+                    print(f"Warning: Template {src} not found in package.")
+                    continue
+                template = self.env.get_template(src)
+                rendered = template.render(
+                    config=self.final_conf, 
+                    global_config=self.global_conf,
+                    injected_env=injected_env,
+                    exports=exports
+                )
+                
+                dest_path = os.path.normpath(os.path.join(self.out_dir, dest))
+                if not dest_path.startswith(self.out_dir):
+                    continue
+                os.makedirs(os.path.dirname(dest_path), exist_ok=True)
+                with open(dest_path, "w") as f:
+                    f.write(rendered)
+                    
+        # Write state file for stegctl
+        state = {
+            "deployer": "docker-compose",
+            "package": self.manifest.get("name")
+        }
+        with open(os.path.join(self.out_dir, ".stegpkg-state.json"), "w") as f:
+            json.dump(state, f)
+
+class PackageEngine:
+    def __init__(self, group_prefix):
+        self.group_name = GroupManager.resolve_group(group_prefix)
+        self.conf_dir = os.path.join(STEGOS_ROOT, "conf", self.group_name)
+        self.cont_dir = os.path.join(STEGOS_ROOT, "containers", self.group_name)
+        self.repo_dir = os.path.join(STEGOS_ROOT, "repos", self.group_name)
+        
+        os.makedirs(self.conf_dir, exist_ok=True)
+        os.makedirs(self.cont_dir, exist_ok=True)
+        
+        self.cap_manager = CapabilityManager(self.conf_dir)
+        
+        # Load Global Config
+        self.global_conf = {}
+        gc_path = os.path.join(self.conf_dir, "global.json")
+        if os.path.isfile(gc_path):
+            with open(gc_path, "r") as f:
+                self.global_conf = json.load(f)
+
+    def find_package_dir(self, pkg_name, target_repo=None):
+        if not os.path.isdir(self.repo_dir):
+            print(f"Error: Repos directory {self.repo_dir} does not exist.")
+            sys.exit(1)
+            
+        found = []
+        for root, dirs, files in os.walk(self.repo_dir):
+            if "manifest.yml" in files and os.path.basename(root) == pkg_name:
+                found.append(root)
+                
+        if not found:
+            print(f"Error: Package '{pkg_name}' not found.")
+            sys.exit(1)
+            
+        if target_repo:
+            filtered = [p for p in found if f"/{target_repo}/" in p or p.endswith(f"/{target_repo}")]
+            if not filtered:
+                print(f"Error: Package '{pkg_name}' not found in repo '{target_repo}'")
+                sys.exit(1)
+            found = filtered
+                
+        if len(found) > 1:
+            print(f"Error: Multiple packages named '{pkg_name}' found. Use --repo.")
+            sys.exit(1)
+            
+        return found[0]
+
+    def process_package(self, pkg_dir, cli_conf=None, reconfigure=False, non_interactive=False):
+        if cli_conf is None:
+            cli_conf = {}
+            
+        manifest_path = os.path.join(pkg_dir, "manifest.yml")
+        with open(manifest_path, "r") as f:
+            manifest = yaml.safe_load(f)
+            
+        pkg_name = manifest.get("name")
+        pkg_conf_path = os.path.join(self.conf_dir, f"{pkg_name}.json")
+        
+        pkg_conf = {}
+        if os.path.isfile(pkg_conf_path):
+            with open(pkg_conf_path, "r") as f:
+                pkg_conf = json.load(f)
+                
+        config_schema = manifest.get("config_schema", {})
+        final_conf = {}
+        
+        if config_schema:
+            final_conf = ConfigResolver.resolve(config_schema, pkg_conf, self.global_conf, cli_conf, reconfigure, non_interactive)
+            try:
+                jsonschema.validate(instance=final_conf, schema=config_schema)
+            except jsonschema.exceptions.ValidationError as e:
+                print(f"Validation failed: {e.message}")
+                sys.exit(1)
+                
+        # Save package config
+        with open(pkg_conf_path, "w") as f:
+            json.dump(final_conf, f, indent=4)
+            
+        out_dir = os.path.join(self.cont_dir, pkg_name)
+        os.makedirs(out_dir, exist_ok=True)
+        
+        env = Environment(loader=FileSystemLoader(pkg_dir))
+        
+        deployers = manifest.get("deployers", {})
+        for dep_type, dep_config in deployers.items():
+            if dep_type == "docker-compose":
+                deployer = DockerComposeDeployer(dep_type, dep_config, pkg_dir, out_dir, env, final_conf, self.global_conf, manifest)
+                deployer.deploy(self.cap_manager)
+            else:
+                print(f"Warning: Unknown deployer '{dep_type}'")
+                
+        # Register capabilities
+        provides = manifest.get("capabilities", {}).get("provides", [])
+        for p in provides:
+            cap_name = p.get("name")
+            if cap_name:
+                self.cap_manager.register_provider(cap_name, pkg_name, p.get("injectors", {}))
+
+def main():
+    parser = argparse.ArgumentParser(description="StegOS Package Manager")
+    subparsers = parser.add_subparsers(dest="command", required=True)
+
+    # INSTALL command
+    install_p = subparsers.add_parser("install", help="Install a package")
+    install_p.add_argument("package_name", help="Package to install")
+    install_p.add_argument("--group", required=True, help="Target Stegmap group")
+    install_p.add_argument("--repo", help="Disambiguate if multiple repos provide package")
+    install_p.add_argument("--config", help="Path to JSON file with config values")
+    install_p.add_argument("--reconfigure", action="store_true", help="Force prompts")
+    install_p.add_argument("--non-interactive", action="store_true", help="Abort instead of prompting")
+    
+    # UPDATE command
+    update_p = subparsers.add_parser("update", help="Update all packages in a group based on current config")
+    update_p.add_argument("--group", required=True, help="Target Stegmap group")
+
+    args = parser.parse_args()
+    
+    engine = PackageEngine(args.group)
+    
+    if args.command == "install":
+        pkg_dir = engine.find_package_dir(args.package_name, args.repo)
+        cli_conf = {}
+        if args.config:
+            with open(args.config, "r") as f:
+                cli_conf = json.load(f)
+        engine.process_package(pkg_dir, cli_conf, args.reconfigure, args.non_interactive)
+        print(f"Successfully installed {args.package_name}!")
+        
+    elif args.command == "update":
+        # Scan conf directory for all <pkg>.json files
+        updated = 0
+        for f in os.listdir(engine.conf_dir):
+            if f.endswith(".json") and f != "global.json" and f != "capabilities.json":
+                pkg_name = f[:-5]
+                try:
+                    pkg_dir = engine.find_package_dir(pkg_name)
+                    engine.process_package(pkg_dir, cli_conf={}, reconfigure=False, non_interactive=True)
+                    updated += 1
+                except SystemExit:
+                    print(f"Warning: Could not update package '{pkg_name}'")
+                    continue
+        print(f"Successfully updated {updated} packages in group {engine.group_name}.")
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,98 @@
+#!/usr/bin/env python3
+import os
+import sys
+import argparse
+import json
+import subprocess
+
+STEGOS_ROOT = os.environ.get("STEGOS_ROOT", "/stegos")
+
+class GroupManager:
+    @staticmethod
+    def resolve_group(group_prefix):
+        containers_base = os.path.join(STEGOS_ROOT, "containers")
+        if not os.path.isdir(containers_base):
+            return group_prefix
+        
+        matches = []
+        for d in os.listdir(containers_base):
+            if d == group_prefix or d.startswith(f"{group_prefix}_"):
+                matches.append(d)
+                
+        if len(matches) == 1:
+            return matches[0]
+        elif len(matches) > 1:
+            print(f"Error: Multiple groups match '{group_prefix}': {matches}")
+            sys.exit(1)
+        
+        return group_prefix
+
+class LifecycleManager:
+    def __init__(self, group_prefix):
+        self.group_name = GroupManager.resolve_group(group_prefix)
+        self.cont_dir = os.path.join(STEGOS_ROOT, "containers", self.group_name)
+
+    def execute(self, action, package_name=None):
+        if not os.path.isdir(self.cont_dir):
+            print(f"Error: Group directory '{self.cont_dir}' not found.")
+            sys.exit(1)
+
+        packages = [package_name] if package_name else os.listdir(self.cont_dir)
+        
+        for pkg in packages:
+            pkg_path = os.path.join(self.cont_dir, pkg)
+            if not os.path.isdir(pkg_path):
+                continue
+                
+            state_file = os.path.join(pkg_path, ".stegpkg-state.json")
+            if not os.path.isfile(state_file):
+                if package_name:
+                    print(f"[{pkg}] No state file found. Was it installed with stegpkg?")
+                continue
+                
+            with open(state_file, "r") as f:
+                state = json.load(f)
+                
+            deployer = state.get("deployer")
+            if deployer == "docker-compose":
+                self._handle_docker_compose(action, pkg, pkg_path)
+            else:
+                print(f"[{pkg}] Warning: Unknown deployer '{deployer}'")
+                
+    def _handle_docker_compose(self, action, pkg, pkg_path):
+        compose_file = os.path.join(pkg_path, "docker-compose.yml")
+        if not os.path.isfile(compose_file):
+            print(f"[{pkg}] Error: docker-compose.yml missing.")
+            return
+            
+        print(f"[{pkg}] Executing docker-compose {action}...")
+        
+        cmd = ["docker", "compose", "-f", compose_file]
+        if action == "start":
+            cmd.extend(["up", "-d"])
+        elif action == "stop":
+            cmd.append("down")
+        elif action == "status":
+            cmd.append("ps")
+        else:
+            print(f"[{pkg}] Unknown action '{action}'")
+            return
+            
+        try:
+            subprocess.run(cmd, check=True)
+        except subprocess.CalledProcessError as e:
+            print(f"[{pkg}] Error: Command failed with code {e.returncode}")
+
+def main():
+    parser = argparse.ArgumentParser(description="StegOS Runtime Orchestrator")
+    parser.add_argument("action", choices=["start", "stop", "status"], help="Action to perform")
+    parser.add_argument("package", nargs="?", help="Specific package to control (optional, controls all if omitted)")
+    parser.add_argument("--group", required=True, help="Target Stegmap group")
+    
+    args = parser.parse_args()
+    
+    manager = LifecycleManager(args.group)
+    manager.execute(args.action, args.package)
+
+if __name__ == "__main__":
+    main()

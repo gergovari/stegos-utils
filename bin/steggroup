@@ -1,0 +1,141 @@
+#!/usr/bin/env python3
+import sys
+import argparse
+import subprocess
+import os
+import tempfile
+import json
+import glob
+import time
+
+def is_root():
+    return os.geteuid() == 0
+
+def check_filesystem(device):
+    # Returns the filesystem type, or empty string if none.
+    try:
+        result = subprocess.run(
+            ["blkid", "-o", "value", "-s", "TYPE", device],
+            capture_output=True,
+            text=True
+        )
+        return result.stdout.strip()
+    except subprocess.CalledProcessError:
+        return ""
+    except FileNotFoundError:
+        print("Error: 'blkid' command not found.")
+        sys.exit(1)
+
+def main():
+    parser = argparse.ArgumentParser(description="StegOS Group Initialization Utility")
+    subparsers = parser.add_subparsers(dest="command", required=True)
+    
+    init_p = subparsers.add_parser("init", help="Initialize a block device as a StegOS group")
+    init_p.add_argument("device", help="Block device path (e.g. /dev/vdb)")
+    init_p.add_argument("--name", required=True, help="Logical name of the group (e.g. mygroup)")
+    init_p.add_argument("--domain", help="Base domain for global configuration")
+    init_p.add_argument("--timezone", help="Timezone for global configuration")
+    init_p.add_argument("--non-interactive", action="store_true", help="Do not prompt for configuration")
+    
+    args = parser.parse_args()
+    
+    if not is_root():
+        print("Error: This utility requires root privileges to mount and format drives.")
+        sys.exit(1)
+        
+    if args.command == "init":
+        device = args.device
+        group_name = args.name
+        
+        if not os.path.exists(device):
+            print(f"Error: Device '{device}' does not exist.")
+            sys.exit(1)
+            
+        fs_type = check_filesystem(device)
+        if fs_type:
+            print(f"Device {device} already contains a filesystem ({fs_type}).")
+            # We will not format it, but we can still initialize the folders.
+        else:
+            print(f"Formatting {device} as ext4...")
+            label = f"stegos.{group_name}"
+            try:
+                subprocess.run(["mkfs.ext4", "-L", label, "-q", device], check=True)
+                print(f"Successfully formatted with label: {label}")
+            except subprocess.CalledProcessError as e:
+                print(f"Error: Formatting failed with code {e.returncode}")
+                sys.exit(1)
+                
+        # Temporarily mount to seed folders
+        tmp_mnt = tempfile.mkdtemp(prefix="steggroup_")
+        print(f"Mounting temporarily to {tmp_mnt} to seed folders...")
+        try:
+            subprocess.run(["mount", device, tmp_mnt], check=True)
+            
+            # Create required folders
+            for folder in ["repos", "containers", "conf"]:
+                path = os.path.join(tmp_mnt, folder)
+                os.makedirs(path, exist_ok=True)
+                print(f"Created directory: /{folder}")
+                
+            # Check for existing global configurations across all mapped groups
+            existing_globals = glob.glob("/stegos/conf/*/global.json")
+            if not existing_globals:
+                print("No existing global configurations found in any active group.")
+                base_domain = args.domain
+                timezone = args.timezone
+                
+                print("Seeding a default global.json into the new group...")
+                if not args.non_interactive:
+                    if not base_domain:
+                        base_domain = input("Enter base domain [default: localhost]: ").strip() or "localhost"
+                    if not timezone:
+                        timezone = input("Enter timezone [default: UTC]: ").strip() or "UTC"
+                else:
+                    if not base_domain: base_domain = "localhost"
+                    if not timezone: timezone = "UTC"
+                    
+                default_global = {
+                    "base_domain": base_domain,
+                    "timezone": timezone
+                }
+                global_path = os.path.join(tmp_mnt, "conf", "global.json")
+                with open(global_path, "w") as f:
+                    json.dump(default_global, f, indent=4)
+                print(f"Seeded: {global_path}")
+            else:
+                print("An existing global.json was detected in another group. Skipping global config seeding.")
+                
+            # Ownership adjustment for StegOS standard user if needed
+            # In standard StegOS, the default user is 'steguser'
+            try:
+                import pwd
+                steg_uid = pwd.getpwnam('steguser').pw_uid
+                steg_gid = pwd.getpwnam('steguser').pw_gid
+                for root, dirs, files in os.walk(tmp_mnt):
+                    for d in dirs:
+                        os.chown(os.path.join(root, d), steg_uid, steg_gid)
+                    for f in files:
+                        os.chown(os.path.join(root, f), steg_uid, steg_gid)
+                os.chown(tmp_mnt, steg_uid, steg_gid)
+                print("Adjusted ownership for 'steguser'.")
+            except KeyError:
+                print("Warning: 'steguser' not found on this system. Ownership left as root.")
+                
+        except subprocess.CalledProcessError as e:
+            print(f"Error: Mounting failed with code {e.returncode}")
+            sys.exit(1)
+        finally:
+            print("Unmounting...")
+            # Retry unmount a few times if busy
+            for _ in range(3):
+                result = subprocess.run(["umount", tmp_mnt])
+                if result.returncode == 0:
+                    break
+                time.sleep(1)
+            os.rmdir(tmp_mnt)
+            
+        print("\nInitialization complete! You can now mount the group using:")
+        print("  stegmap mount")
+
+if __name__ == "__main__":
+    main()
