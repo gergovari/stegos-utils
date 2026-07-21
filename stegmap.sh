@@ -103,7 +103,7 @@ cmd_mount() {
 	log_info "Starting device discovery..."
 
 	# Ensure dynamic root is prepared
-	mkdir -p "$STEGOS_ROOT" 2>/dev/null
+	mkdir -p "$STEGOS_ROOT" 2>/dev/null || true
 	if ! grep -q "[[:space:]]${STEGOS_ROOT}[[:space:]]" /proc/mounts; then
 		mount_opts="mode=0755"
 		if [ -n "$SELINUX_TMPFS_CTX" ]; then
