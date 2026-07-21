@@ -26,6 +26,16 @@ def check_filesystem(device):
         print("Error: 'blkid' command not found.")
         sys.exit(1)
 
+def check_if_mounted(device):
+    try:
+        with open("/proc/mounts", "r") as f:
+            for line in f:
+                if line.startswith(f"{device} "):
+                    return True
+    except FileNotFoundError:
+        pass
+    return False
+
 def main():
     parser = argparse.ArgumentParser(description="StegOS Group Initialization Utility")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -49,6 +59,10 @@ def main():
         
         if not os.path.exists(device):
             print(f"Error: Device '{device}' does not exist.")
+            sys.exit(1)
+            
+        if check_if_mounted(device):
+            print(f"Error: Device '{device}' is currently mounted and actively in use by the system. Refusing to initialize.")
             sys.exit(1)
             
         fs_type = check_filesystem(device)
@@ -123,6 +137,12 @@ def main():
                 
         except subprocess.CalledProcessError as e:
             print(f"Error: Mounting failed with code {e.returncode}")
+            sys.exit(1)
+        except OSError as e:
+            print(f"Error: Filesystem operation failed: {e}")
+            sys.exit(1)
+        except Exception as e:
+            print(f"Error: An unexpected error occurred: {e}")
             sys.exit(1)
         finally:
             print("Unmounting...")
