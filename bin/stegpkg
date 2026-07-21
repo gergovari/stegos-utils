@@ -346,7 +346,7 @@ class PackageEngine:
                 self.cap_manager.register_provider(cap_name, pkg_name, p.get("injectors", {}))
 
 def main():
-    parser = argparse.ArgumentParser(description="StegOS Package Manager")
+    parser = argparse.ArgumentParser(description="stegOS Package Manager")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     # INSTALL command

@@ -84,7 +84,7 @@ class LifecycleManager:
             print(f"[{pkg}] Error: Command failed with code {e.returncode}")
 
 def main():
-    parser = argparse.ArgumentParser(description="StegOS Runtime Orchestrator")
+    parser = argparse.ArgumentParser(description="stegOS Runtime Orchestrator")
     parser.add_argument("action", choices=["start", "stop", "status"], help="Action to perform")
     parser.add_argument("package", nargs="?", help="Specific package to control (optional, controls all if omitted)")
     parser.add_argument("--group", required=True, help="Target Stegmap group")

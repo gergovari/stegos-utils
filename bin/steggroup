@@ -37,11 +37,11 @@ def check_if_mounted(device):
     return False
 
 def main():
-    parser = argparse.ArgumentParser(description="StegOS Group Initialization Utility")
+    parser = argparse.ArgumentParser(description="stegOS Group Initialization Utility")
     subparsers = parser.add_subparsers(dest="command", required=True)
     
-    init_p = subparsers.add_parser("init", help="Initialize a block device as a StegOS group")
-    init_p.add_argument("device", help="Block device path (e.g. /dev/vdb)")
+    init_p = subparsers.add_parser("init", help="Initialize a block device as a stegOS group")
+    init_p.add_argument("device", help="Block device path (e.g. /dev/sda)")
     init_p.add_argument("--name", required=True, help="Logical name of the group (e.g. mygroup)")
     init_p.add_argument("--domain", help="Base domain for global configuration")
     init_p.add_argument("--timezone", help="Timezone for global configuration")
@@ -119,8 +119,8 @@ def main():
             else:
                 print("An existing global.json was detected in another group. Skipping global config seeding.")
                 
-            # Ownership adjustment for StegOS standard user if needed
-            # In standard StegOS, the default user is 'steguser'
+            # Ownership adjustment for stegOS standard user if needed
+            # In standard stegOS, the default user is 'steguser'
             try:
                 import pwd
                 steg_uid = pwd.getpwnam('steguser').pw_uid
