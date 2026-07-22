@@ -334,7 +334,7 @@ class DockerComposeDeployer(DeployerBase):
 class PackageEngine:
     def __init__(self, group_prefix):
         self.group_name = GroupManager.resolve_group(group_prefix)
-        self.conf_dir = os.path.join(STEGOS_ROOT, "conf", self.group_name)
+        self.conf_dir = os.path.join(STEGOS_ROOT, "persistent", self.group_name)
         self.cont_dir = os.path.join(STEGOS_ROOT, "persistent", self.group_name)
         self.repo_dir = os.path.join(STEGOS_ROOT, "repos", self.group_name)
         

@@ -86,7 +86,7 @@ def main():
             subprocess.run(["mount", device, tmp_mnt], check=True)
             
             # Create required folders
-            for folder in ["repos", "persistent", "conf"]:
+            for folder in ["repos", "persistent"]:
                 path = os.path.join(tmp_mnt, folder)
                 os.makedirs(path, exist_ok=True)
                 print(f"Created directory: /{folder}")
@@ -108,7 +108,7 @@ def main():
                 "base_domain": base_domain,
                 "timezone": timezone
             }
-            global_path = os.path.join(tmp_mnt, "conf", "global.json")
+            global_path = os.path.join(tmp_mnt, "persistent", "global.json")
             with open(global_path, "w") as f:
                 json.dump(default_global, f, indent=4)
             print(f"Seeded: {global_path}")
