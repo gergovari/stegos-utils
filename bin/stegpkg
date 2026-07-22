@@ -647,7 +647,8 @@ def main():
                 if pkg_name:
                     try:
                         pkg_dir = engine.find_package_dir(pkg_name)
-                        engine.process_package(pkg_dir, cli_conf={}, reconfigure=False, non_interactive=True, instance_id=d)
+                        is_interactive = bool(args.instance_ids)
+                        engine.process_package(pkg_dir, cli_conf={}, reconfigure=is_interactive, non_interactive=not is_interactive, instance_id=d)
                         reconfigured += 1
                     except SystemExit:
                         print(f"Warning: Could not reconfigure package '{pkg_name}' for instance '{d}'")
