@@ -2,6 +2,7 @@
 import os
 import sys
 import argparse
+import subprocess
 import yaml
 import jsonschema
 import json
@@ -350,10 +351,6 @@ class PackageEngine:
                         except:
                             pass
                             
-        if not reconfigure and is_singleton and existing_instances:
-            print(f"Error: '{pkg_name}' is a singleton package and is already installed. Use --reconfigure to modify it.")
-            sys.exit(1)
-        
         if instance_id:
             instance_name = instance_id
         else:
@@ -369,6 +366,10 @@ class PackageEngine:
             else:
                 import uuid
                 instance_name = f"{pkg_name}-{uuid.uuid4().hex[:8]}"
+                
+        if is_singleton and instance_name not in existing_instances and existing_instances:
+            print(f"Error: '{pkg_name}' is a singleton package and is already installed. Use --reconfigure to modify it.")
+            sys.exit(1)
                 
         pkg_conf_path = os.path.join(self.conf_dir, f"{instance_name}.json")
         
@@ -439,6 +440,31 @@ class PackageEngine:
             if cap_name:
                 self.cap_manager.register_provider(cap_name, instance_name, p.get("injectors", {}))
 
+    def resolve_instance(self, name):
+        if os.path.isdir(os.path.join(self.cont_dir, name)):
+            return name
+        
+        matched = []
+        for d in os.listdir(self.cont_dir):
+            state_file = os.path.join(self.cont_dir, d, ".stegpkg-state.json")
+            if os.path.isfile(state_file):
+                try:
+                    with open(state_file, "r") as f:
+                        state = json.load(f)
+                    if state.get("package") == name:
+                        matched.append(d)
+                except:
+                    pass
+                    
+        if len(matched) == 1:
+            return matched[0]
+        elif len(matched) > 1:
+            print(f"Error: Multiple instances of package '{name}' found: {matched}. Please specify exact instance ID.")
+            sys.exit(1)
+        else:
+            print(f"Error: Instance or package '{name}' not found.")
+            sys.exit(1)
+
 def main():
     parser = argparse.ArgumentParser(description="stegOS Package Manager")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -455,6 +481,7 @@ def main():
     
     # RECONFIGURE command
     reconfigure_p = subparsers.add_parser("reconfigure", help="Regenerate configuration files for all packages in a group")
+    reconfigure_p.add_argument("instance_id", nargs="?", help="Instance ID to reconfigure (defaults to all)")
     reconfigure_p.add_argument("--group", help="Target Stegmap group (optional if only one exists)")
 
     # REMOVE command
@@ -485,9 +512,9 @@ def main():
         print(f"Successfully installed {args.package_name} as {args.id if args.id else args.package_name}!")
         
     elif args.command == "reconfigure":
-        # Scan containers directory for all installed instances
+        instances = [engine.resolve_instance(args.instance_id)] if args.instance_id else os.listdir(engine.cont_dir)
         reconfigured = 0
-        for d in os.listdir(engine.cont_dir):
+        for d in instances:
             state_file = os.path.join(engine.cont_dir, d, ".stegpkg-state.json")
             if os.path.isfile(state_file):
                 with open(state_file, "r") as f:
@@ -504,31 +531,29 @@ def main():
         print(f"Successfully reconfigured {reconfigured} instances in group {engine.group_name}.")
         
     elif args.command == "remove":
-        instance_dir = os.path.join(engine.cont_dir, args.instance_id)
-        if not os.path.isdir(instance_dir):
-            print(f"Error: Instance '{args.instance_id}' not found in group '{engine.group_name}'.")
-            sys.exit(1)
+        real_id = engine.resolve_instance(args.instance_id)
+        instance_dir = os.path.join(engine.cont_dir, real_id)
             
-        print(f"Stopping instance '{args.instance_id}'...")
+        print(f"Stopping instance '{real_id}'...")
         try:
-            subprocess.run(["stegctl", "stop", args.instance_id, "--group", engine.group_name], check=True)
+            subprocess.run(["stegctl", "stop", real_id, "--group", engine.group_name], check=True)
         except subprocess.CalledProcessError:
             print("Warning: Failed to stop instance cleanly. Proceeding with removal...")
             
-        engine.cap_manager.unregister_provider(args.instance_id)
+        engine.cap_manager.unregister_provider(real_id)
         
         import shutil
         shutil.rmtree(instance_dir)
         
         import glob
-        conf_files = glob.glob(os.path.join(engine.conf_dir, f"*-{args.instance_id}.json"))
+        conf_files = glob.glob(os.path.join(engine.conf_dir, f"*-{real_id}.json"))
         for cf in conf_files:
             os.remove(cf)
             
-        print(f"Successfully removed instance '{args.instance_id}'.")
+        print(f"Successfully removed instance '{real_id}'.")
         
     elif args.command == "upgrade":
-        instances = [args.instance_id] if args.instance_id else os.listdir(engine.cont_dir)
+        instances = [engine.resolve_instance(args.instance_id)] if args.instance_id else os.listdir(engine.cont_dir)
         
         upgraded = 0
         for d in instances:
