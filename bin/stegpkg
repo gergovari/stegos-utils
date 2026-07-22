@@ -574,6 +574,10 @@ def main():
     update_p = subparsers.add_parser("update", help="Update app repositories via git pull")
     update_p.add_argument("--group", help="Target Stegmap group (optional if only one exists)")
 
+    # LIST command
+    list_p = subparsers.add_parser("list", help="List installed packages")
+    list_p.add_argument("--group", help="Target Stegmap group (optional if only one exists)")
+
     args = parser.parse_args()
     
     engine = PackageEngine(args.group)
@@ -681,6 +685,25 @@ def main():
             else:
                 print(f"[{d}] Skipping (Not a git repository)")
         print(f"Successfully updated {updated} repositories.")
+
+    elif args.command == "list":
+        if not os.path.isdir(engine.cont_dir):
+            print(f"No packages installed in group '{engine.group_name}'.")
+            return
+            
+        print(f"Installed packages in group '{engine.group_name}':")
+        count = 0
+        for d in sorted(os.listdir(engine.cont_dir)):
+            state_file = os.path.join(engine.cont_dir, d, ".stegpkg-state.json")
+            if os.path.isfile(state_file):
+                with open(state_file, "r") as f:
+                    state = json.load(f)
+                pkg_name = state.get("package", "unknown")
+                print(f"  - {d} (Package: {pkg_name})")
+                count += 1
+        
+        if count == 0:
+            print("  (none)")
 
 if __name__ == "__main__":
     main()
