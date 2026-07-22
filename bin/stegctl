@@ -149,14 +149,20 @@ class LifecycleManager:
 
 def main():
     parser = argparse.ArgumentParser(description="stegOS Runtime Orchestrator")
-    parser.add_argument("action", choices=["start", "stop", "status", "logs", "pull"], help="Action to perform")
-    parser.add_argument("package", nargs="?", help="Specific package to control (optional, controls all if omitted)")
+    parser.add_argument("action", choices=["start", "stop", "restart", "status", "logs", "pull"], help="Action to perform")
+    parser.add_argument("package", nargs="?", help="Specific package to perform action on (defaults to all)")
     parser.add_argument("--group", help="Target Stegmap group (optional if only one exists)")
+    parser.add_argument("extra_args", nargs=argparse.REMAINDER, help="Additional arguments to pass to docker-compose")
     
-    args, extra = parser.parse_known_args()
+    args = parser.parse_args()
     
     manager = LifecycleManager(args.group)
-    manager.execute(args.action, args.package, extra)
+    
+    if args.action == "restart":
+        manager.execute("stop", args.package, args.extra_args)
+        manager.execute("start", args.package, args.extra_args)
+    else:
+        manager.execute(args.action, args.package, args.extra_args)
 
 if __name__ == "__main__":
     try:
