@@ -467,6 +467,10 @@ def main():
     upgrade_p.add_argument("instance_id", nargs="?", help="Instance ID to upgrade (defaults to all)")
     upgrade_p.add_argument("--group", help="Target Stegmap group (optional if only one exists)")
 
+    # UPDATE command
+    update_p = subparsers.add_parser("update", help="Update app repositories via git pull")
+    update_p.add_argument("--group", help="Target Stegmap group (optional if only one exists)")
+
     args = parser.parse_args()
     
     engine = PackageEngine(args.group)
@@ -546,6 +550,26 @@ def main():
                         print(f"Warning: Could not upgrade package '{pkg_name}' for instance '{d}': {e}")
                         continue
         print(f"Successfully upgraded {upgraded} instances in group {engine.group_name}.")
+        
+    elif args.command == "update":
+        if not os.path.isdir(engine.repo_dir):
+            print(f"Error: Repos directory {engine.repo_dir} does not exist.")
+            sys.exit(1)
+            
+        updated = 0
+        for d in os.listdir(engine.repo_dir):
+            repo_path = os.path.join(engine.repo_dir, d)
+            git_dir = os.path.join(repo_path, ".git")
+            if os.path.isdir(git_dir):
+                print(f"[{d}] Updating repository from remote...")
+                try:
+                    subprocess.run(["git", "pull", "--rebase"], cwd=repo_path, check=True)
+                    updated += 1
+                except subprocess.CalledProcessError:
+                    print(f"Warning: Failed to update repository '{d}'")
+            else:
+                print(f"[{d}] Skipping (Not a git repository)")
+        print(f"Successfully updated {updated} repositories.")
 
 if __name__ == "__main__":
     main()
