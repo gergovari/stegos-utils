@@ -49,61 +49,53 @@ class GroupManager:
         return group_prefix
 
 class CapabilityManager:
-    def __init__(self, conf_dir):
-        self.state_file = os.path.join(conf_dir, "capabilities.json")
-        self.state = self._load()
+    def __init__(self, engine):
+        self.engine = engine
+        self.state = {}
+        self.refresh()
 
-    def _load(self):
-        if os.path.isfile(self.state_file):
-            with open(self.state_file, "r") as f:
-                return json.load(f)
-        return {}
+    def refresh(self):
+        self.state = {}
+        if not os.path.isdir(self.engine.cont_dir):
+            return
+            
+        import yaml
+        for d in os.listdir(self.engine.cont_dir):
+            state_file = os.path.join(self.engine.cont_dir, d, ".stegpkg-state.json")
+            if os.path.isfile(state_file):
+                try:
+                    with open(state_file, "r") as f:
+                        state = json.load(f)
+                    pkg_name = state.get("package")
+                    if pkg_name:
+                        # We use find_package_dir without specifying repo, assuming unique names
+                        pkg_dir = self.engine.find_package_dir(pkg_name)
+                        manifest_path = os.path.join(pkg_dir, "manifest.yml")
+                        if os.path.isfile(manifest_path):
+                            with open(manifest_path, "r") as mf:
+                                manifest = yaml.safe_load(mf)
+                            provides = manifest.get("capabilities", {}).get("provides", [])
+                            for cap in provides:
+                                c_name = cap.get("name")
+                                if c_name:
+                                    if c_name not in self.state:
+                                        self.state[c_name] = {}
+                                    self.state[c_name][d] = {
+                                        "injector": cap.get("injectors", {})
+                                    }
+                except Exception:
+                    pass
 
-    def _save(self):
-        with open(self.state_file, "w") as f:
-            json.dump(self.state, f, indent=4)
-
-    def register_provider(self, cap_name, pkg_name, injector_rules):
+    def register_provider(self, cap_name, instance_name, injector_rules):
+        # Only registers in memory for the duration of this CLI run
         if cap_name not in self.state:
             self.state[cap_name] = {}
-        # We need to gracefully migrate old format to new dict format if present
-        if "provider" in self.state[cap_name]:
-            old_prov = self.state[cap_name]["provider"]
-            old_inj = self.state[cap_name].get("injector", {})
-            self.state[cap_name] = {old_prov: {"injector": old_inj}}
-            
-        self.state[cap_name][pkg_name] = {
+        self.state[cap_name][instance_name] = {
             "injector": injector_rules
         }
-        self._save()
-
-    def unregister_provider(self, pkg_name):
-        to_delete = []
-        for cap, data in self.state.items():
-            if "provider" in data:
-                # Old format fallback
-                if data["provider"] == pkg_name:
-                    to_delete.append(cap)
-            else:
-                # New dict format
-                if pkg_name in data:
-                    del data[pkg_name]
-                if not data:
-                    to_delete.append(cap)
-                    
-        for cap in to_delete:
-            del self.state[cap]
-            
-        self._save()
 
     def get_providers(self, cap_name):
-        data = self.state.get(cap_name)
-        if not data:
-            return {}
-        if "provider" in data:
-            # Migrate old format on the fly for reads
-            return {data["provider"]: {"injector": data.get("injector", {})}}
-        return data
+        return self.state.get(cap_name, {})
 
 class ConfigResolver:
     @staticmethod
@@ -318,7 +310,7 @@ class PackageEngine:
         os.makedirs(self.conf_dir, exist_ok=True)
         os.makedirs(self.cont_dir, exist_ok=True)
         
-        self.cap_manager = CapabilityManager(self.conf_dir)
+        self.cap_manager = CapabilityManager(self)
         
         # Load Global Config
         self.global_conf = {}
@@ -631,12 +623,10 @@ def main():
                 
             print(f"Stopping instance '{real_id}'...")
             try:
-                subprocess.run(["stegctl", "down", real_id, "--group", engine.group_name], check=True)
+                subprocess.run(["stegctl", "stop", real_id, "--group", engine.group_name], check=True)
             except subprocess.CalledProcessError:
                 print("Warning: Failed to stop instance cleanly. Proceeding with removal...")
                 
-            engine.cap_manager.unregister_provider(real_id)
-            
             import shutil
             shutil.rmtree(instance_dir)
             
