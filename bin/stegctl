@@ -61,7 +61,6 @@ class LifecycleManager:
             if os.path.isdir(target_path):
                 packages = [package_name]
             else:
-                import json
                 matched = []
                 for d in os.listdir(self.cont_dir):
                     state_file = os.path.join(self.cont_dir, d, ".stegpkg-state.json")

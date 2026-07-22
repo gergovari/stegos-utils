@@ -588,7 +588,7 @@ def main():
             if os.path.isdir(git_dir):
                 print(f"[{d}] Updating repository from remote...")
                 try:
-                    subprocess.run(["git", "pull", "--rebase"], cwd=repo_path, check=True)
+                    subprocess.run(["git", "pull", "--rebase", "--autostash"], cwd=repo_path, check=True)
                     updated += 1
                 except subprocess.CalledProcessError:
                     print(f"Warning: Failed to update repository '{d}'")
