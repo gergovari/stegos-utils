@@ -97,7 +97,19 @@ class LifecycleManager:
                 
             with open(state_file, "r") as f:
                 state = json.load(f)
-                
+
+            if action == "start":
+                enabled_caps = state.get("enabled_caps", {})
+                for cap, provs in enabled_caps.items():
+                    if not isinstance(provs, list):
+                        provs = [provs]
+                    for p in provs:
+                        print(f"[{pkg}] Ensuring provider '{p}' is started...")
+                        # Avoid infinite loop by not passing the same package name
+                        if p != pkg:
+                            self.execute(action, p, extra_args)
+
+
             deployer = state.get("deployer")
             if deployer == "docker-compose":
                 self._handle_docker_compose(action, pkg, pkg_path, extra_args)

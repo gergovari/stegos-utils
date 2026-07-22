@@ -78,6 +78,13 @@ get_config_label() {
 cmd_unmount() {
 	log_info "Starting cleanup..."
 
+	# Check if any Docker containers are still running
+	if command -v docker >/dev/null 2>&1; then
+		if [ -n "$(docker ps -q 2>/dev/null)" ]; then
+			log_fatal "Cannot unmount: Docker containers are still running. Stop them first (e.g. stegctl stop)."
+		fi
+	fi
+
 	# Read /proc/mounts directly instead of findmnt.
 	# Awk calculates string length, sorts descending to unmount deepest paths first.
 	mounts_to_remove=$(awk -v prefix="${STEGOS_ROOT}" '$2 ~ "^" prefix "(/|$)" {print length($2), $2}' /proc/mounts | sort -rn | cut -d" " -f2)

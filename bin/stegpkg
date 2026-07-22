@@ -295,7 +295,8 @@ class DockerComposeDeployer(DeployerBase):
         state = {
             "deployer": "docker-compose",
             "package": self.manifest.get("name"),
-            "instance": self.instance_name
+            "instance": self.instance_name,
+            "enabled_caps": self.final_conf.get("_enabled_capabilities", {})
         }
         with open(os.path.join(self.out_dir, ".stegpkg-state.json"), "w") as f:
             json.dump(state, f)
