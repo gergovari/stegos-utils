@@ -86,7 +86,7 @@ def main():
             subprocess.run(["mount", device, tmp_mnt], check=True)
             
             # Create required folders
-            for folder in ["repos", "containers", "conf"]:
+            for folder in ["repos", "persistent", "conf"]:
                 path = os.path.join(tmp_mnt, folder)
                 os.makedirs(path, exist_ok=True)
                 print(f"Created directory: /{folder}")
@@ -152,4 +152,8 @@ def main():
         print("  stegmap mount")
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except KeyboardInterrupt:
+        print("\nAborted by user.")
+        sys.exit(130)

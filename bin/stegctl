@@ -10,7 +10,7 @@ STEGOS_ROOT = os.environ.get("STEGOS_ROOT", "/stegos")
 class GroupManager:
     @staticmethod
     def resolve_group(group_prefix=None):
-        containers_base = os.path.join(STEGOS_ROOT, "containers")
+        containers_base = os.path.join(STEGOS_ROOT, "persistent")
         if not os.path.isdir(containers_base):
             if group_prefix:
                 return group_prefix
@@ -63,7 +63,7 @@ class LifecycleManager:
             else:
                 matched = []
                 for d in os.listdir(self.cont_dir):
-                    state_file = os.path.join(self.cont_dir, d, ".stegpkg-state.json")
+                    state_file = os.path.join(self.cont_dir, d, "backend", ".stegpkg-state.json")
                     if os.path.isfile(state_file):
                         try:
                             with open(state_file, "r") as f:
@@ -85,7 +85,7 @@ class LifecycleManager:
             packages = os.listdir(self.cont_dir)
         
         for pkg in packages:
-            pkg_path = os.path.join(self.cont_dir, pkg)
+            pkg_path = os.path.join(self.cont_dir, pkg, "backend")
             if not os.path.isdir(pkg_path):
                 continue
                 
@@ -159,4 +159,8 @@ def main():
     manager.execute(args.action, args.package, extra)
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except KeyboardInterrupt:
+        print("\nAborted by user.")
+        sys.exit(130)

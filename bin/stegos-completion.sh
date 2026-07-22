@@ -11,7 +11,7 @@ _stegpkg() {
         # Actually stegpkg update takes no arguments, it just runs.
         COMPREPLY=()
     elif [[ $cword -ge 2 && (${words[1]} == "remove" || ${words[1]} == "upgrade" || ${words[1]} == "reconfigure") ]]; then
-        local containers=$(find /stegos/containers -mindepth 2 -maxdepth 2 -type d -exec basename {} \; 2>/dev/null)
+        local containers=$(find /stegos/persistent -mindepth 2 -maxdepth 2 -type d -exec basename {} \; 2>/dev/null)
         COMPREPLY=( $(compgen -W "$containers" -- "$cur") )
     fi
 }
@@ -24,7 +24,7 @@ _stegctl() {
     if [[ $cword -eq 1 ]]; then
         COMPREPLY=( $(compgen -W "start stop status logs pull" -- "$cur") )
     elif [[ $cword -eq 2 ]]; then
-        local containers=$(find /stegos/containers -mindepth 2 -maxdepth 2 -type d -exec basename {} \; 2>/dev/null)
+        local containers=$(find /stegos/persistent -mindepth 2 -maxdepth 2 -type d -exec basename {} \; 2>/dev/null)
         COMPREPLY=( $(compgen -W "$containers" -- "$cur") )
     fi
 }
