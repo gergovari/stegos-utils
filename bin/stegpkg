@@ -734,7 +734,7 @@ def main():
         print(f"Installed packages in group '{engine.group_name}':")
         count = 0
         for d in sorted(os.listdir(engine.cont_dir)):
-            state_file = os.path.join(engine.cont_dir, d, ".stegpkg-state.json")
+            state_file = os.path.join(engine.cont_dir, d, "backend", ".stegpkg-state.json")
             if os.path.isfile(state_file):
                 with open(state_file, "r") as f:
                     state = json.load(f)
