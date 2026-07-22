@@ -46,6 +46,7 @@ def main():
     init_p.add_argument("--domain", help="Base domain for global configuration")
     init_p.add_argument("--timezone", help="Timezone for global configuration")
     init_p.add_argument("--non-interactive", action="store_true", help="Do not prompt for configuration")
+    init_p.add_argument("--force", action="store_true", help="Force wipe if drive already contains data")
     
     args = parser.parse_args()
     
@@ -67,17 +68,20 @@ def main():
             
         fs_type = check_filesystem(device)
         if fs_type:
-            print(f"Device {device} already contains a filesystem ({fs_type}).")
-            # We will not format it, but we can still initialize the folders.
-        else:
-            print(f"Formatting {device} as ext4...")
-            label = f"stegos.{group_name}"
-            try:
-                subprocess.run(["mkfs.ext4", "-L", label, "-q", device], check=True)
-                print(f"Successfully formatted with label: {label}")
-            except subprocess.CalledProcessError as e:
-                print(f"Error: Formatting failed with code {e.returncode}")
+            if not args.force:
+                print(f"Error: Device {device} already contains a filesystem ({fs_type}).")
+                print("Use --force to wipe all data and initialize.")
                 sys.exit(1)
+            print(f"Device {device} contains data. Proceeding with wipe due to --force...")
+            
+        print(f"Formatting {device} as ext4...")
+        label = f"stegos.{group_name}"
+        try:
+            subprocess.run(["mkfs.ext4", "-F", "-L", label, "-q", device], check=True)
+            print(f"Successfully formatted with label: {label}")
+        except subprocess.CalledProcessError as e:
+            print(f"Error: Formatting failed with code {e.returncode}")
+            sys.exit(1)
                 
         # Temporarily mount to seed folders
         tmp_mnt = tempfile.mkdtemp(prefix="steggroup_")
