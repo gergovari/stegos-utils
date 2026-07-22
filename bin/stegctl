@@ -116,6 +116,8 @@ class LifecycleManager:
         if action == "start":
             cmd.extend(["up", "-d"])
         elif action == "stop":
+            cmd.append("stop")
+        elif action == "down":
             cmd.append("down")
         elif action == "status":
             cmd.append("ps")
@@ -137,7 +139,7 @@ class LifecycleManager:
 
 def main():
     parser = argparse.ArgumentParser(description="stegOS Runtime Orchestrator")
-    parser.add_argument("action", choices=["start", "stop", "status", "logs", "pull"], help="Action to perform")
+    parser.add_argument("action", choices=["start", "stop", "down", "status", "logs", "pull"], help="Action to perform")
     parser.add_argument("package", nargs="?", help="Specific package to control (optional, controls all if omitted)")
     parser.add_argument("--group", help="Target Stegmap group (optional if only one exists)")
     

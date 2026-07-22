@@ -4,15 +4,13 @@ _stegpkg() {
     
     if [[ $cword -eq 1 ]]; then
         COMPREPLY=( $(compgen -W "install reconfigure remove upgrade update" -- "$cur") )
-    elif [[ $cword -eq 2 && ${words[1]} == "install" ]]; then
-        local pkgs=$(ls /stegos/repos/*/ 2>/dev/null | grep -v ":" | sed 's/\///g')
-        # Wait, ls /stegos/repos/*/* is better
-        pkgs=$(find /stegos/repos -mindepth 2 -maxdepth 2 -type d -exec basename {} \; 2>/dev/null)
+    elif [[ $cword -ge 2 && ${words[1]} == "install" ]]; then
+        local pkgs=$(find /stegos/repos -mindepth 2 -maxdepth 2 -type d -exec basename {} \; 2>/dev/null)
         COMPREPLY=( $(compgen -W "$pkgs" -- "$cur") )
-    elif [[ $cword -eq 2 && (${words[1]} == "reconfigure" || ${words[1]} == "update") ]]; then
-        # Actually stegpkg reconfigure/update take no package arguments, they just run.
+    elif [[ $cword -ge 2 && ${words[1]} == "update" ]]; then
+        # Actually stegpkg update takes no arguments, it just runs.
         COMPREPLY=()
-    elif [[ $cword -eq 2 && (${words[1]} == "remove" || ${words[1]} == "upgrade") ]]; then
+    elif [[ $cword -ge 2 && (${words[1]} == "remove" || ${words[1]} == "upgrade" || ${words[1]} == "reconfigure") ]]; then
         local containers=$(find /stegos/containers -mindepth 2 -maxdepth 2 -type d -exec basename {} \; 2>/dev/null)
         COMPREPLY=( $(compgen -W "$containers" -- "$cur") )
     fi
@@ -24,7 +22,7 @@ _stegctl() {
     _init_completion || return
     
     if [[ $cword -eq 1 ]]; then
-        COMPREPLY=( $(compgen -W "start stop status logs pull" -- "$cur") )
+        COMPREPLY=( $(compgen -W "start stop down status logs pull" -- "$cur") )
     elif [[ $cword -eq 2 ]]; then
         local containers=$(find /stegos/containers -mindepth 2 -maxdepth 2 -type d -exec basename {} \; 2>/dev/null)
         COMPREPLY=( $(compgen -W "$containers" -- "$cur") )

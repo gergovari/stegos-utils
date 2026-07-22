@@ -64,8 +64,15 @@ class CapabilityManager:
             json.dump(self.state, f, indent=4)
 
     def register_provider(self, cap_name, pkg_name, injector_rules):
-        self.state[cap_name] = {
-            "provider": pkg_name,
+        if cap_name not in self.state:
+            self.state[cap_name] = {}
+        # We need to gracefully migrate old format to new dict format if present
+        if "provider" in self.state[cap_name]:
+            old_prov = self.state[cap_name]["provider"]
+            old_inj = self.state[cap_name].get("injector", {})
+            self.state[cap_name] = {old_prov: {"injector": old_inj}}
+            
+        self.state[cap_name][pkg_name] = {
             "injector": injector_rules
         }
         self._save()
@@ -73,15 +80,30 @@ class CapabilityManager:
     def unregister_provider(self, pkg_name):
         to_delete = []
         for cap, data in self.state.items():
-            if data.get("provider") == pkg_name:
-                to_delete.append(cap)
+            if "provider" in data:
+                # Old format fallback
+                if data["provider"] == pkg_name:
+                    to_delete.append(cap)
+            else:
+                # New dict format
+                if pkg_name in data:
+                    del data[pkg_name]
+                if not data:
+                    to_delete.append(cap)
+                    
         for cap in to_delete:
             del self.state[cap]
-        if to_delete:
-            self._save()
+            
+        self._save()
 
-    def get_provider(self, cap_name):
-        return self.state.get(cap_name)
+    def get_providers(self, cap_name):
+        data = self.state.get(cap_name)
+        if not data:
+            return {}
+        if "provider" in data:
+            # Migrate old format on the fly for reads
+            return {data["provider"]: {"injector": data.get("injector", {})}}
+        return data
 
 class ConfigResolver:
     @staticmethod
@@ -238,15 +260,22 @@ class DockerComposeDeployer(DeployerBase):
         for cap in consumes:
             if cap not in enabled_caps:
                 continue
-            provider_info = cap_manager.get_provider(cap)
-            if provider_info:
-                injectors = provider_info.get("injectors", {})
-                dc_injector = injectors.get("docker-compose", {})
-                env_rules = dc_injector.get("env", {})
-                for ek, ev in env_rules.items():
-                    t = self.env.from_string(ev)
-                    val = t.render(consumer={"config": self.final_conf, "exports": exports})
-                    injected_env[ek] = val
+                
+            selected_providers = enabled_caps[cap]
+            if not isinstance(selected_providers, list):
+                selected_providers = [selected_providers]
+                
+            all_providers = cap_manager.get_providers(cap)
+            for prov_id in selected_providers:
+                if prov_id in all_providers:
+                    provider_info = all_providers[prov_id]
+                    injectors = provider_info.get("injector", {}) # Note: changed from 'injectors' to 'injector' to match register_provider format
+                    dc_injector = injectors.get("docker-compose", {})
+                    env_rules = dc_injector.get("env", {})
+                    for ek, ev in env_rules.items():
+                        t = self.env.from_string(ev)
+                        val = t.render(consumer={"config": self.final_conf, "exports": exports})
+                        injected_env[ek] = val
 
         # Process Templates
         templates = self.config.get("templates", [{"src": "docker-compose.yml.j2", "dest": "docker-compose.yml"}])
@@ -257,18 +286,16 @@ class DockerComposeDeployer(DeployerBase):
                 if not os.path.exists(os.path.join(self.pkg_dir, src)):
                     print(f"Warning: Template {src} not found in package.")
                     continue
-                template = self.env.get_template(src)
-                rendered = template.render(
-                    config=self.final_conf, 
-                    global_config=self.global_conf,
-                    injected_env=injected_env,
-                    exports=exports
-                )
                 
-                dest_path = os.path.normpath(os.path.join(self.out_dir, dest))
-                if not dest_path.startswith(self.out_dir):
-                    continue
-                os.makedirs(os.path.dirname(dest_path), exist_ok=True)
+                with open(os.path.join(self.pkg_dir, src), "r") as f:
+                    template_content = f.read()
+                    
+                t = self.env.from_string(template_content)
+                rendered = t.render(config=self.final_conf, global_config=self.global_conf, injected_env=injected_env)
+                
+                dest_path = os.path.join(self.out_dir, os.path.normpath(dest))
+                if os.path.dirname(dest_path):
+                    os.makedirs(os.path.dirname(dest_path), exist_ok=True)
                 with open(dest_path, "w") as f:
                     f.write(rendered)
                     
@@ -381,24 +408,81 @@ class PackageEngine:
         config_schema = manifest.get("config_schema", {})
         conditional_schemas = manifest.get("conditional_config_schema", {})
         
-        enabled_caps = pkg_conf.get("_enabled_capabilities", [])
-        consumes = manifest.get("capabilities", {}).get("consumes", [])
+        enabled_caps_raw = pkg_conf.get("_enabled_capabilities", {})
+        enabled_caps = {}
+        if isinstance(enabled_caps_raw, list):
+            for cap in enabled_caps_raw:
+                provs = self.cap_manager.get_providers(cap)
+                enabled_caps[cap] = list(provs.keys())
+        else:
+            enabled_caps = enabled_caps_raw
+            
+        consumes_raw = manifest.get("capabilities", {}).get("consumes", [])
+        consumes = {}
+        if isinstance(consumes_raw, list):
+            for c in consumes_raw:
+                consumes[c] = {}
+        else:
+            consumes = consumes_raw
         
         if consumes and not non_interactive:
-            for cap_name in consumes:
-                if self.cap_manager.get_provider(cap_name):
-                    default_ans = "Y" if (cap_name in enabled_caps or not pkg_conf) else "N"
-                    if reconfigure or not pkg_conf:
-                        ans = input(f"\nIntegration available: '{cap_name}'. Enable? [{default_ans}/n]: ").strip().lower()
-                        if ans in ("y", "yes") or (ans == "" and default_ans == "Y"):
-                            if cap_name not in enabled_caps:
-                                enabled_caps.append(cap_name)
-                        else:
-                            if cap_name in enabled_caps:
-                                enabled_caps.remove(cap_name)
+            for cap_name, cap_rules in consumes.items():
+                provs = self.cap_manager.get_providers(cap_name)
+                if not provs:
+                    continue
+                    
+                prov_list = list(provs.keys())
+                print(f"\nIntegration available: '{cap_name}'")
+                
+                max_provs = cap_rules.get("max_providers")
+                if max_provs:
+                    print(f"(Note: This app allows a maximum of {max_provs} provider(s) for this integration)")
+                    
+                print("Available providers:")
+                for idx, p_name in enumerate(prov_list):
+                    print(f"  {idx+1}. {p_name}")
+                
+                default_sel = []
+                if cap_name in enabled_caps:
+                    for p in enabled_caps[cap_name]:
+                        if p in prov_list:
+                            default_sel.append(str(prov_list.index(p) + 1))
+                if not default_sel and not pkg_conf:
+                    if max_provs and max_provs < len(prov_list):
+                        default_sel = [] # Don't select anything if limit is strictly smaller to avoid guessing
+                    else:
+                        default_sel = ["1"]
+                
+                default_str = ",".join(default_sel)
+                
+                if reconfigure or not pkg_conf:
+                    while True:
+                        ans = input(f"Select providers to enable (comma separated list of numbers, or empty to skip) [default: {default_str}]: ").strip()
+                        if not ans and default_str:
+                            ans = default_str
+                        
+                        selected = []
+                        if ans:
+                            for part in ans.split(","):
+                                part = part.strip()
+                                if part.isdigit():
+                                    idx = int(part) - 1
+                                    if 0 <= idx < len(prov_list):
+                                        selected.append(prov_list[idx])
+                                        
+                        if max_provs and len(selected) > max_provs:
+                            print(f"Error: You can only select up to {max_provs} provider(s). Please try again.")
+                            continue
+                                        
+                        if selected:
+                            enabled_caps[cap_name] = selected
+                        elif cap_name in enabled_caps:
+                            del enabled_caps[cap_name]
+                        
+                        break
         
         for cap_name, cond_schema in conditional_schemas.items():
-            if cap_name in enabled_caps and self.cap_manager.get_provider(cap_name):
+            if cap_name in enabled_caps and enabled_caps[cap_name] and self.cap_manager.get_providers(cap_name):
                 if "properties" in cond_schema:
                     config_schema.setdefault("properties", {}).update(cond_schema["properties"])
                 if "required" in cond_schema:
@@ -471,7 +555,7 @@ def main():
 
     # INSTALL command
     install_p = subparsers.add_parser("install", help="Install a package")
-    install_p.add_argument("package_name", help="Package to install")
+    install_p.add_argument("packages", nargs="+", help="Package(s) to install")
     install_p.add_argument("--id", help="Instance ID for this installation (defaults to package name)")
     install_p.add_argument("--group", help="Target Stegmap group (optional if only one exists)")
     install_p.add_argument("--repo", help="Disambiguate if multiple repos provide package")
@@ -481,17 +565,17 @@ def main():
     
     # RECONFIGURE command
     reconfigure_p = subparsers.add_parser("reconfigure", help="Regenerate configuration files for all packages in a group")
-    reconfigure_p.add_argument("instance_id", nargs="?", help="Instance ID to reconfigure (defaults to all)")
+    reconfigure_p.add_argument("instance_ids", nargs="*", help="Instance ID(s) to reconfigure (defaults to all)")
     reconfigure_p.add_argument("--group", help="Target Stegmap group (optional if only one exists)")
 
     # REMOVE command
     remove_p = subparsers.add_parser("remove", help="Remove a package instance")
-    remove_p.add_argument("instance_id", help="Instance ID to remove")
+    remove_p.add_argument("instance_ids", nargs="+", help="Instance ID(s) to remove")
     remove_p.add_argument("--group", help="Target Stegmap group (optional if only one exists)")
 
     # UPGRADE command
     upgrade_p = subparsers.add_parser("upgrade", help="Upgrade packages and pull latest images")
-    upgrade_p.add_argument("instance_id", nargs="?", help="Instance ID to upgrade (defaults to all)")
+    upgrade_p.add_argument("instance_ids", nargs="*", help="Instance ID(s) to upgrade (defaults to all)")
     upgrade_p.add_argument("--group", help="Target Stegmap group (optional if only one exists)")
 
     # UPDATE command
@@ -503,16 +587,26 @@ def main():
     engine = PackageEngine(args.group)
     
     if args.command == "install":
-        pkg_dir = engine.find_package_dir(args.package_name, args.repo)
-        cli_conf = {}
-        if args.config:
-            with open(args.config, "r") as f:
-                cli_conf = json.load(f)
-        engine.process_package(pkg_dir, cli_conf, args.reconfigure, args.non_interactive, args.id)
-        print(f"Successfully installed {args.package_name} as {args.id if args.id else args.package_name}!")
+        if args.id and len(args.packages) > 1:
+            print("Error: --id cannot be used when installing multiple packages.")
+            sys.exit(1)
+            
+        unique_pkgs = []
+        for p in args.packages:
+            if p not in unique_pkgs:
+                unique_pkgs.append(p)
+            
+        for pkg in unique_pkgs:
+            pkg_dir = engine.find_package_dir(pkg, args.repo)
+            cli_conf = {}
+            if args.config:
+                with open(args.config, "r") as f:
+                    cli_conf = json.load(f)
+            engine.process_package(pkg_dir, cli_conf, args.reconfigure, args.non_interactive, args.id)
+            print(f"Successfully installed {pkg} as {args.id if args.id else pkg}!\n")
         
     elif args.command == "reconfigure":
-        instances = [engine.resolve_instance(args.instance_id)] if args.instance_id else os.listdir(engine.cont_dir)
+        instances = [engine.resolve_instance(i) for i in args.instance_ids] if args.instance_ids else os.listdir(engine.cont_dir)
         reconfigured = 0
         for d in instances:
             state_file = os.path.join(engine.cont_dir, d, ".stegpkg-state.json")
@@ -531,29 +625,30 @@ def main():
         print(f"Successfully reconfigured {reconfigured} instances in group {engine.group_name}.")
         
     elif args.command == "remove":
-        real_id = engine.resolve_instance(args.instance_id)
-        instance_dir = os.path.join(engine.cont_dir, real_id)
+        for i_id in args.instance_ids:
+            real_id = engine.resolve_instance(i_id)
+            instance_dir = os.path.join(engine.cont_dir, real_id)
+                
+            print(f"Stopping instance '{real_id}'...")
+            try:
+                subprocess.run(["stegctl", "down", real_id, "--group", engine.group_name], check=True)
+            except subprocess.CalledProcessError:
+                print("Warning: Failed to stop instance cleanly. Proceeding with removal...")
+                
+            engine.cap_manager.unregister_provider(real_id)
             
-        print(f"Stopping instance '{real_id}'...")
-        try:
-            subprocess.run(["stegctl", "stop", real_id, "--group", engine.group_name], check=True)
-        except subprocess.CalledProcessError:
-            print("Warning: Failed to stop instance cleanly. Proceeding with removal...")
+            import shutil
+            shutil.rmtree(instance_dir)
             
-        engine.cap_manager.unregister_provider(real_id)
-        
-        import shutil
-        shutil.rmtree(instance_dir)
-        
-        import glob
-        conf_files = glob.glob(os.path.join(engine.conf_dir, f"*-{real_id}.json"))
-        for cf in conf_files:
-            os.remove(cf)
-            
-        print(f"Successfully removed instance '{real_id}'.")
+            import glob
+            conf_files = glob.glob(os.path.join(engine.conf_dir, f"*-{real_id}.json"))
+            for cf in conf_files:
+                os.remove(cf)
+                
+            print(f"Successfully removed instance '{real_id}'.")
         
     elif args.command == "upgrade":
-        instances = [engine.resolve_instance(args.instance_id)] if args.instance_id else os.listdir(engine.cont_dir)
+        instances = [engine.resolve_instance(i) for i in args.instance_ids] if args.instance_ids else os.listdir(engine.cont_dir)
         
         upgraded = 0
         for d in instances:
@@ -588,6 +683,7 @@ def main():
             if os.path.isdir(git_dir):
                 print(f"[{d}] Updating repository from remote...")
                 try:
+                    subprocess.run(["git", "config", "--global", "--add", "safe.directory", repo_path], check=True, capture_output=True)
                     subprocess.run(["git", "pull", "--rebase", "--autostash"], cwd=repo_path, check=True)
                     updated += 1
                 except subprocess.CalledProcessError:
