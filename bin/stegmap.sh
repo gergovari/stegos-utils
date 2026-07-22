@@ -14,8 +14,8 @@ LOCK_DIR="${STEGOS_LOCK_DIR:-/var/lock/stegmap_lock}"
 
 # SELinux Overrides (Leave empty if SELinux is disabled/permissive)
 # Example: SELINUX_TMPFS_CTX="rootcontext=system_u:object_r:tmpfs_t:s0"
-SELINUX_TMPFS_CTX="${SELINUX_TMPFS_CTX:-}"
-SELINUX_DRIVE_CTX="${SELINUX_DRIVE_CTX:-}"
+SELINUX_TMPFS_CTX="${SELINUX_TMPFS_CTX:-rootcontext=system_u:object_r:container_file_t:s0}"
+SELINUX_DRIVE_CTX="${SELINUX_DRIVE_CTX:-rootcontext=system_u:object_r:container_file_t:s0}"
 
 # Space-separated list of required folders (No arrays in POSIX sh)
 TARGET_FOLDERS="repos containers conf"
