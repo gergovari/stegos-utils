@@ -76,7 +76,7 @@ class CapabilityManager:
             
         import yaml
         for d in os.listdir(self.engine.cont_dir):
-            state_file = os.path.join(self.engine.cont_dir, d, ".stegpkg-state.json")
+            state_file = os.path.join(self.engine.cont_dir, d, "backend", ".stegpkg-state.json")
             if os.path.isfile(state_file):
                 try:
                     with open(state_file, "r") as f:
@@ -555,7 +555,7 @@ class PackageEngine:
         
         matched = []
         for d in os.listdir(self.cont_dir):
-            state_file = os.path.join(self.cont_dir, d, ".stegpkg-state.json")
+            state_file = os.path.join(self.cont_dir, d, "backend", ".stegpkg-state.json")
             if os.path.isfile(state_file):
                 try:
                     with open(state_file, "r") as f:
@@ -639,7 +639,7 @@ def main():
         instances = [engine.resolve_instance(i) for i in args.instance_ids] if args.instance_ids else os.listdir(engine.cont_dir)
         reconfigured = 0
         for d in instances:
-            state_file = os.path.join(engine.cont_dir, d, ".stegpkg-state.json")
+            state_file = os.path.join(engine.cont_dir, d, "backend", ".stegpkg-state.json")
             if os.path.isfile(state_file):
                 with open(state_file, "r") as f:
                     state = json.load(f)
@@ -686,7 +686,7 @@ def main():
         
         upgraded = 0
         for d in instances:
-            state_file = os.path.join(engine.cont_dir, d, ".stegpkg-state.json")
+            state_file = os.path.join(engine.cont_dir, d, "backend", ".stegpkg-state.json")
             if os.path.isfile(state_file):
                 with open(state_file, "r") as f:
                     state = json.load(f)
