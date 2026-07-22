@@ -598,6 +598,7 @@ def main():
     remove_p.add_argument("instance_ids", nargs="+", help="Instance ID(s) to remove")
     remove_p.add_argument("--group", help="Target Stegmap group (optional if only one exists)")
     remove_p.add_argument("--purge", action="store_true", help="Remove all persistent user data for the instance")
+    remove_p.add_argument("--cascade", action="store_true", help="Automatically remove integrations from dependent instances")
 
     # UPGRADE command
     upgrade_p = subparsers.add_parser("upgrade", help="Upgrade packages and pull latest images")
@@ -656,8 +657,78 @@ def main():
         print(f"Successfully reconfigured {reconfigured} instances in group {engine.group_name}.")
         
     elif args.command == "remove":
-        for i_id in args.instance_ids:
-            real_id = engine.resolve_instance(i_id)
+        real_ids = [engine.resolve_instance(i) for i in args.instance_ids]
+        
+        # Check for dependencies
+        deps = {}
+        if os.path.isdir(engine.cont_dir):
+            for d in os.listdir(engine.cont_dir):
+                if d in real_ids:
+                    continue
+                state_file = os.path.join(engine.cont_dir, d, "backend", ".stegpkg-state.json")
+                if os.path.isfile(state_file):
+                    try:
+                        with open(state_file, "r") as f:
+                            state = json.load(f)
+                        enabled_caps = state.get("enabled_caps", {})
+                        for cap, provs in enabled_caps.items():
+                            if isinstance(provs, list):
+                                for p in provs:
+                                    if p in real_ids:
+                                        deps.setdefault(p, []).append(d)
+                            elif provs in real_ids:
+                                deps.setdefault(provs, []).append(d)
+                    except:
+                        pass
+        
+        if deps:
+            all_dependents = []
+            for p, dependents in deps.items():
+                print(f"Warning: '{p}' is currently being used by: {', '.join(dependents)}")
+                for d in dependents:
+                    if d not in all_dependents:
+                        all_dependents.append(d)
+                        
+            if args.cascade:
+                ans = 'y'
+            else:
+                ans = input("Do you want to automatically reconfigure these instances to remove the integration and restart them? [y/N]: ").strip().lower()
+                
+            if ans == 'y':
+                for d in all_dependents:
+                    print(f"[{d}] Reconfiguring to remove integrations...")
+                    pkg_conf_path = os.path.join(engine.cont_dir, d, "conf", f"{d}.json")
+                    if os.path.isfile(pkg_conf_path):
+                        with open(pkg_conf_path, "r") as f:
+                            pkg_conf = json.load(f)
+                        enabled_caps = pkg_conf.get("_enabled_capabilities", {})
+                        for cap, provs in list(enabled_caps.items()):
+                            if isinstance(provs, list):
+                                new_provs = [p for p in provs if p not in real_ids]
+                                if not new_provs:
+                                    del enabled_caps[cap]
+                                else:
+                                    enabled_caps[cap] = new_provs
+                            elif provs in real_ids:
+                                del enabled_caps[cap]
+                                
+                        with open(pkg_conf_path, "w") as f:
+                            json.dump(pkg_conf, f, indent=4)
+                            
+                        state_file = os.path.join(engine.cont_dir, d, "backend", ".stegpkg-state.json")
+                        with open(state_file, "r") as f:
+                            state = json.load(f)
+                        pkg_name = state.get("package")
+                        if pkg_name:
+                            pkg_dir = engine.find_package_dir(pkg_name)
+                            engine.process_package(pkg_dir, cli_conf={}, reconfigure=False, non_interactive=True, instance_id=d)
+                            print(f"[{d}] Restarting instance...")
+                            subprocess.run(["stegctl", "start", d, "--group", engine.group_name], check=True)
+            else:
+                print("Aborting removal.")
+                sys.exit(1)
+
+        for real_id in real_ids:
             instance_dir = os.path.join(engine.cont_dir, real_id)
                 
             print(f"Stopping instance '{real_id}'...")
