@@ -46,7 +46,7 @@ class GroupManager:
 class LifecycleManager:
     def __init__(self, group_prefix):
         self.group_name = GroupManager.resolve_group(group_prefix)
-        self.cont_dir = os.path.join(STEGOS_ROOT, "containers", self.group_name)
+        self.cont_dir = os.path.join(STEGOS_ROOT, "persistent", self.group_name)
 
     def execute(self, action, package_name=None, extra_args=None):
         if extra_args is None:
