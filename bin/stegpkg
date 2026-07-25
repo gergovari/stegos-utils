@@ -985,12 +985,7 @@ def cmd_upgrade(args, engine):
                 pkg_dir, cli_conf={}, reconfigure=False,
                 non_interactive=True, instance_id=instance_id,
             )
-            print(f"[{instance_id}] Pulling latest images...")
-            subprocess.run(
-                ["stegctl", "--group", engine.group_name, "pull", instance_id],
-                check=True,
-            )
-            print(f"[{instance_id}] Restarting...")
+            print(f"[{instance_id}] Ensuring instance is up to date...")
             subprocess.run(
                 ["stegctl", "--group", engine.group_name, "start", instance_id],
                 check=True,
@@ -1207,7 +1202,7 @@ def main():
 
     # -- upgrade ------------------------------------------------------------
     p = subparsers.add_parser("upgrade",
-                              help="Upgrade packages and pull images")
+                              help="Upgrade packages")
     p.add_argument("instance_ids", nargs="*",
                    help="Instance(s) to upgrade (default: all)")
     p.add_argument("--group", help="Target group")

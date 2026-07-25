@@ -13,7 +13,7 @@ import sys
 
 import yaml
 
-from steglib.constants import VERSION, PERSISTENT_DIR, BACKEND_DIR, STATE_FILENAME, DOCKER_CACHE_DIR
+from steglib.constants import VERSION, PERSISTENT_DIR, BACKEND_DIR, STATE_FILENAME
 from steglib.group import GroupManager
 from steglib import state
 
@@ -122,6 +122,7 @@ class LifecycleManager:
         if not images:
             return
             
+        # Use the group directory for caching
         cache_dir = os.path.join(self.cont_dir, DOCKER_CACHE_DIR)
         os.makedirs(cache_dir, exist_ok=True)
         
@@ -141,6 +142,7 @@ class LifecycleManager:
                 if not os.path.isfile(cache_path):
                     print(f"Caching image '{image}' to group cache...")
                     subprocess.run(["docker", "save", "-o", cache_path, image])
+                
 
     def _handle_docker_compose(self, action, pkg, pkg_path, extra_args):
         """
@@ -169,8 +171,6 @@ class LifecycleManager:
             cmd.append("ps")
         elif action == "logs":
             cmd.append("logs")
-        elif action == "pull":
-            cmd.append("pull")
         else:
             print(f"[{pkg}] Unknown action '{action}'")
             return
@@ -189,7 +189,7 @@ def main():
     """Main entry point for stegctl."""
     parser = argparse.ArgumentParser(description="stegOS Runtime Orchestrator")
     parser.add_argument('--version', action='version', version=f'stegctl {VERSION}')
-    parser.add_argument("action", choices=["start", "stop", "restart", "status", "logs", "pull"], help="Action to perform")
+    parser.add_argument("action", choices=["start", "stop", "restart", "status", "logs"], help="Action to perform")
     parser.add_argument("package", nargs="?", help="Specific package to perform action on (defaults to all)")
     parser.add_argument("--group", help="Target group (optional if only one exists)")
     parser.add_argument("extra_args", nargs=argparse.REMAINDER, help="Additional arguments to pass to docker-compose")
