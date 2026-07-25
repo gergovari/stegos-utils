@@ -230,7 +230,8 @@ class DeployerBase:
     """Abstract base class for package deployers."""
 
     def __init__(self, name, config, pkg_dir, out_dir, env,
-                 final_conf, global_conf, manifest, instance_name):
+                 final_conf, global_conf, manifest, instance_name,
+                 group_name=None):
         self.name = name
         self.config = config
         self.pkg_dir = pkg_dir
@@ -240,6 +241,9 @@ class DeployerBase:
         self.global_conf = global_conf
         self.manifest = manifest
         self.instance_name = instance_name
+        self.group_name = group_name or os.path.basename(
+            os.path.dirname(os.path.dirname(os.path.normpath(out_dir)))
+        )
 
     def deploy(self, cap_manager):
         """Deploy the package. Subclasses must implement this."""
@@ -298,8 +302,7 @@ class DockerComposeDeployer(DeployerBase):
 
         # Persist deployer state for stegctl.
         state.write_state(
-            # Derive group from out_dir path structure.
-            os.path.basename(os.path.dirname(os.path.dirname(self.out_dir))),
+            self.group_name,
             self.instance_name,
             {
                 "deployer": "docker-compose",
@@ -639,6 +642,7 @@ class PackageEngine:
                 deployer = DockerComposeDeployer(
                     dep_type, dep_config, pkg_dir, out_dir, env,
                     final_conf, self.global_conf, manifest, instance_name,
+                    self.group_name,
                 )
                 deployer.deploy(self.cap_manager)
             else:
@@ -651,6 +655,8 @@ class PackageEngine:
                 self.cap_manager.register(
                     cap_name, instance_name, cap.get("injectors", {}),
                 )
+
+        return instance_name
 
     def resolve_instance(self, name):
         """Resolve a user-supplied name to an instance ID.
@@ -674,11 +680,60 @@ class PackageEngine:
         if len(matched) == 1:
             return matched[0]
         if len(matched) > 1:
+            if sys.stdin.isatty():
+                print(f"Multiple instances match '{name}':")
+                for idx, inst in enumerate(matched, 1):
+                    print(f"  {idx}. {inst}")
+                while True:
+                    ans = input(f"Select instance [1-{len(matched)}]: ").strip()
+                    if ans.isdigit() and 1 <= int(ans) <= len(matched):
+                        return matched[int(ans) - 1]
+                    print("Invalid selection. Try again.")
             print(f"Error: Multiple instances of '{name}' found: {matched}."
                   " Specify the exact instance ID.")
             sys.exit(1)
         print(f"Error: Instance or package '{name}' not found.")
         sys.exit(1)
+
+    def resolve_instances(self, names):
+        """Resolve user-supplied names or package names to a list of instance IDs."""
+        results = []
+        for name in names:
+            if os.path.isdir(os.path.join(self.group_dir, name)):
+                if name not in results:
+                    results.append(name)
+            else:
+                matched = self._find_instances_by_package(name)
+                if len(matched) == 1:
+                    if matched[0] not in results:
+                        results.append(matched[0])
+                elif len(matched) > 1:
+                    if sys.stdin.isatty():
+                        print(f"Multiple instances match '{name}':")
+                        print("  0. All matching instances")
+                        for idx, inst in enumerate(matched, 1):
+                            print(f"  {idx}. {inst}")
+                        while True:
+                            ans = input(f"Select instance [0-{len(matched)}]: ").strip()
+                            if ans == "0":
+                                for m in matched:
+                                    if m not in results:
+                                        results.append(m)
+                                break
+                            elif ans.isdigit() and 1 <= int(ans) <= len(matched):
+                                selected = matched[int(ans) - 1]
+                                if selected not in results:
+                                    results.append(selected)
+                                break
+                            print("Invalid selection. Try again.")
+                    else:
+                        for m in matched:
+                            if m not in results:
+                                results.append(m)
+                else:
+                    print(f"Error: Instance or package '{name}' not found.")
+                    sys.exit(1)
+        return results
 
     # -- internal helpers ---------------------------------------------------
 
@@ -703,6 +758,15 @@ class PackageEngine:
             if len(existing) == 1:
                 return existing[0]
             if len(existing) > 1:
+                if sys.stdin.isatty():
+                    print(f"Multiple instances of '{pkg_name}' exist:")
+                    for idx, inst in enumerate(existing, 1):
+                        print(f"  {idx}. {inst}")
+                    while True:
+                        ans = input(f"Select instance to reconfigure [1-{len(existing)}]: ").strip()
+                        if ans.isdigit() and 1 <= int(ans) <= len(existing):
+                            return existing[int(ans) - 1]
+                        print("Invalid selection. Try again.")
                 print(f"Error: Multiple instances of '{pkg_name}' exist."
                       f" Specify --id. Available: {existing}")
                 sys.exit(1)
@@ -870,18 +934,18 @@ def cmd_install(args, engine):
         if args.config:
             with open(args.config, "r") as fh:
                 cli_conf = json.load(fh)
-        engine.process_package(
+        inst_id = engine.process_package(
             pkg_dir, cli_conf, args.reconfigure,
             args.non_interactive, args.id,
         )
-        display_name = args.id if args.id else pkg
+        display_name = inst_id if inst_id else (args.id if args.id else pkg)
         print(f"Successfully installed {pkg} as {display_name}!\n")
 
 
 def cmd_reconfigure(args, engine):
     """Handle the ``reconfigure`` subcommand."""
     if args.instance_ids:
-        instances = [engine.resolve_instance(i) for i in args.instance_ids]
+        instances = engine.resolve_instances(args.instance_ids)
     else:
         instances = os.listdir(engine.group_dir) if os.path.isdir(engine.group_dir) else []
 
@@ -912,7 +976,7 @@ def cmd_reconfigure(args, engine):
 
 def cmd_remove(args, engine):
     """Handle the ``remove`` subcommand."""
-    real_ids = [engine.resolve_instance(i) for i in args.instance_ids]
+    real_ids = engine.resolve_instances(args.instance_ids)
 
     # Check for dependents.
     deps = _find_dependents(engine, real_ids)
@@ -971,7 +1035,7 @@ def cmd_remove(args, engine):
 def cmd_upgrade(args, engine):
     """Handle the ``upgrade`` subcommand."""
     if args.instance_ids:
-        instances = [engine.resolve_instance(i) for i in args.instance_ids]
+        instances = engine.resolve_instances(args.instance_ids)
     else:
         instances = os.listdir(engine.group_dir) if os.path.isdir(engine.group_dir) else []
 

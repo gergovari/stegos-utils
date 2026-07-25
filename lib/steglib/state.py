@@ -21,9 +21,9 @@ from .constants import PERSISTENT_DIR, BACKEND_DIR, CONF_DIR, STATE_FILENAME
 
 def state_path(group, instance):
     """Return the absolute path to an instance's state file."""
-    return os.path.join(
+    return os.path.normpath(os.path.join(
         PERSISTENT_DIR, group, instance, BACKEND_DIR, STATE_FILENAME
-    )
+    ))
 
 
 def read_state(group, instance):
@@ -57,9 +57,9 @@ def write_state(group, instance, data):
 
 def conf_path(group, instance):
     """Return the absolute path to an instance's config file."""
-    return os.path.join(
+    return os.path.normpath(os.path.join(
         PERSISTENT_DIR, group, instance, CONF_DIR, f"{instance}.json"
-    )
+    ))
 
 
 def read_conf(group, instance):

@@ -164,6 +164,8 @@ class DockerComposeBackend(BackendBase):
                 elif e.stdout:
                     print(e.stdout.strip())
             print(f"[{self.pkg}] Command failed with code {e.returncode}")
+        except (FileNotFoundError, OSError) as e:
+            print(f"[{self.pkg}] Error during {action}: {e}")
 
 BACKENDS = {
     "docker-compose": DockerComposeBackend,
@@ -232,40 +234,55 @@ class LifecycleManager:
             if n not in visited:
                 visit(n)
                 
-        # Resolve target package if specified
+        # Resolve target package or instances if specified
         if package_name:
-            if package_name not in all_pkgs:
-                matched = []
+            target_instances = []
+            if package_name in all_pkgs:
+                target_instances = [package_name]
+            else:
                 for pkg in all_pkgs:
                     try:
                         st = state.read_state(self.group_name, pkg)
                         if st and st.get("package") == package_name:
-                            matched.append(pkg)
+                            target_instances.append(pkg)
                     except Exception:
                         pass
                 
-                if len(matched) == 1:
-                    package_name = matched[0]
-                elif len(matched) > 1:
-                    print(f"Error: Multiple instances of '{package_name}' found. Please specify instance ID instead: {matched}")
-                    sys.exit(1)
-                else:
+                if not target_instances:
                     print(f"Error: No instance or package named '{package_name}' found in group '{self.group_name}'.")
                     sys.exit(1)
+
+                if len(target_instances) > 1 and sys.stdin.isatty():
+                    print(f"Multiple instances match '{package_name}':")
+                    print("  0. All instances")
+                    for idx, inst in enumerate(target_instances, 1):
+                        print(f"  {idx}. {inst}")
+                    while True:
+                        choice = input(f"Select target [0-{len(target_instances)}]: ").strip()
+                        if choice == "0":
+                            break
+                        elif choice.isdigit() and 1 <= int(choice) <= len(target_instances):
+                            target_instances = [target_instances[int(choice) - 1]]
+                            break
+                        print("Invalid selection. Try again.")
             
             if action == "start":
-                # For start, target package and all its transitive dependencies
+                # For start, target packages and all their transitive dependencies
                 target_set = set()
                 def collect_deps(n):
                     if n not in target_set:
                         target_set.add(n)
                         for d in graph.get(n, []):
                             collect_deps(d)
-                collect_deps(package_name)
+                for inst in target_instances:
+                    collect_deps(inst)
                 packages_to_run = [p for p in topo_order if p in target_set]
             else:
-                # For stop, restart, etc., just operate on the single package
-                packages_to_run = [package_name]
+                # For stop, restart, etc., operate on all target instances
+                if action in ("stop", "restart"):
+                    packages_to_run = [p for p in reversed(topo_order) if p in target_instances]
+                else:
+                    packages_to_run = [p for p in topo_order if p in target_instances]
         else:
             if action in ("stop", "restart"):
                 packages_to_run = list(reversed(topo_order))

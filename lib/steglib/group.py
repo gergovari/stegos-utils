@@ -52,6 +52,15 @@ class GroupManager:
             if len(all_groups) == 1:
                 return all_groups[0]
             if len(all_groups) > 1:
+                if sys.stdin.isatty():
+                    print("Multiple groups exist:")
+                    for idx, g in enumerate(all_groups, 1):
+                        print(f"  {idx}. {g}")
+                    while True:
+                        choice = input(f"Select group [1-{len(all_groups)}]: ").strip()
+                        if choice.isdigit() and 1 <= int(choice) <= len(all_groups):
+                            return all_groups[int(choice) - 1]
+                        print("Invalid selection. Try again.")
                 print("Error: Multiple groups exist. Specify --group."
                       f" Available: {all_groups}")
                 sys.exit(1)
@@ -68,6 +77,15 @@ class GroupManager:
         if len(matches) == 1:
             return matches[0]
         if len(matches) > 1:
+            if sys.stdin.isatty():
+                print(f"Ambiguous group prefix '{prefix}':")
+                for idx, g in enumerate(matches, 1):
+                    print(f"  {idx}. {g}")
+                while True:
+                    choice = input(f"Select group [1-{len(matches)}]: ").strip()
+                    if choice.isdigit() and 1 <= int(choice) <= len(matches):
+                        return matches[int(choice) - 1]
+                    print("Invalid selection. Try again.")
             print(f"Error: Ambiguous group prefix '{prefix}': {matches}")
             sys.exit(1)
 
