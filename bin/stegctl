@@ -24,7 +24,7 @@ class BackendBase:
         self.pkg_path = pkg_path
         self.group_dir = group_dir
 
-    def execute(self, action, if_created=False):
+    def execute(self, action, if_created=False, verbose=False):
         """Execute a lifecycle action."""
         raise NotImplementedError
 
@@ -77,13 +77,14 @@ class DockerComposeBackend(BackendBase):
                     print(f"Caching image '{image}' to group cache...")
                     subprocess.run(["docker", "save", "-o", cache_path, image])
                     
-    def execute(self, action, if_created=False):
+    def execute(self, action, if_created=False, verbose=False):
         """
         Handle docker-compose specific actions for a package.
         
         Args:
             action (str): The lifecycle action to perform.
             if_created (bool): If True, skip start if no containers exist.
+            verbose (bool): If True, do not capture stdout/stderr.
         """
         compose_file = os.path.join(self.pkg_path, "docker-compose.yml")
         if not os.path.isfile(compose_file):
@@ -134,20 +135,21 @@ class DockerComposeBackend(BackendBase):
         try:
             if action == "start":
                 print(f"[{self.pkg}] Starting package...")
-                result = subprocess.run(cmd, check=True, capture_output=True, text=True)
+                result = subprocess.run(cmd, check=True, capture_output=not verbose, text=not verbose)
                 self._sync_docker_cache(compose_file, "post-start")
             elif action == "stop":
                 print(f"[{self.pkg}] Stopping package...")
-                result = subprocess.run(cmd, check=True, capture_output=True, text=True)
+                result = subprocess.run(cmd, check=True, capture_output=not verbose, text=not verbose)
             else:
                 # For status and logs, we let the output flow to the user
                 subprocess.run(cmd, check=True)
         except subprocess.CalledProcessError as e:
             print(f"[{self.pkg}] Error during {action}:")
-            if e.stderr:
-                print(e.stderr.strip())
-            elif e.stdout:
-                print(e.stdout.strip())
+            if not verbose:
+                if e.stderr:
+                    print(e.stderr.strip())
+                elif e.stdout:
+                    print(e.stdout.strip())
             print(f"[{self.pkg}] Command failed with code {e.returncode}")
 
 BACKENDS = {
@@ -162,7 +164,7 @@ class LifecycleManager:
         self.group_name = GroupManager.resolve(group_prefix)
         self.cont_dir = os.path.join(PERSISTENT_DIR, self.group_name)
 
-    def execute(self, action, package_name=None, if_created=False):
+    def execute(self, action, package_name=None, if_created=False, verbose=False):
         """
         Execute an action on a specific package or all packages in the group.
         
@@ -170,6 +172,7 @@ class LifecycleManager:
             action (str): The lifecycle action to perform (e.g., start, stop).
             package_name (str, optional): Specific package to target.
             if_created (bool): If True, backend will skip starting uncreated containers.
+            verbose (bool): If True, pass verbose flag down to the backend.
         """
             
         if not os.path.isdir(self.cont_dir):
@@ -273,7 +276,7 @@ class LifecycleManager:
             if backend_cls:
                 pkg_path = os.path.join(self.cont_dir, pkg, BACKEND_DIR)
                 backend = backend_cls(pkg, pkg_path, self.cont_dir)
-                backend.execute(action, if_created)
+                backend.execute(action, if_created, verbose)
             else:
                 print(f"[{pkg}] Warning: Unknown deployer '{deployer}'")
 
@@ -285,16 +288,17 @@ def main():
     parser.add_argument("package", nargs="?", help="Specific package to perform action on (defaults to all)")
     parser.add_argument("--group", help="Target group (optional if only one exists)")
     parser.add_argument("--if-created", action="store_true", help=argparse.SUPPRESS)
+    parser.add_argument("--verbose", "-v", action="store_true", help="Show verbose output from backends")
     
     args = parser.parse_args()
     
     manager = LifecycleManager(args.group)
     
     if args.action == "restart":
-        manager.execute("stop", args.package, args.if_created)
-        manager.execute("start", args.package, args.if_created)
+        manager.execute("stop", args.package, args.if_created, args.verbose)
+        manager.execute("start", args.package, args.if_created, args.verbose)
     else:
-        manager.execute(args.action, args.package, args.if_created)
+        manager.execute(args.action, args.package, args.if_created, args.verbose)
 
 if __name__ == "__main__":
     try:
