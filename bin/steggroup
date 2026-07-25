@@ -8,6 +8,7 @@ import argparse
 import json
 import os
 import pwd
+import re
 import subprocess
 import sys
 import tempfile
@@ -101,6 +102,10 @@ def main():
         device = args.device
         group_name = args.name
         
+        if not re.match(r"^[a-zA-Z0-9.\-_]+$", group_name):
+            print("Error: Group name can only contain alphanumeric characters, dots, dashes, and underscores.")
+            sys.exit(1)
+        
         if not os.path.exists(device):
             print(f"Error: Device '{device}' does not exist.")
             sys.exit(1)
@@ -162,7 +167,7 @@ def main():
             }
             
             # Place the global config in persistent directory
-            persistent_dir = next((f for f in TARGET_FOLDERS if f == "persistent"), "persistent")
+            persistent_dir = "persistent"
             global_path = os.path.join(tmp_mnt, persistent_dir, GLOBAL_CONF_FILENAME)
             with open(global_path, "w") as f:
                 json.dump(default_global, f, indent=4)

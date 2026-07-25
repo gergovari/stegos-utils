@@ -1,4 +1,19 @@
 #!/bin/sh
+# stegmap — stegOS Drive Mapper.
+#
+# Discovers block devices labeled with the stegOS prefix and bind-mounts
+# their internal directory structure into the stegOS runtime tree.
+#
+# Usage:
+#     stegmap mount     Discover and mount all stegOS-labeled drives.
+#     stegmap unmount   Unmount all stegOS bind mounts.
+#
+# Configuration (via environment variables):
+#     STEGOS_ROOT      Root mount path          (default: /stegos)
+#     STEGOS_CONFIG    Mount config file path   (default: /etc/stegmap/mounts.stegmap)
+#     STEGOS_PREFIX    Device label prefix      (default: stegos)
+#     STEGOS_LOG       Log file path            (default: /var/log/stegmap.log)
+#
 # Strict POSIX compliant (compatible with BusyBox ash)
 set -eu
 

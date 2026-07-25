@@ -48,6 +48,7 @@ def write_state(group, instance, data):
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w") as fh:
         json.dump(data, fh, indent=2)
+    os.chmod(path, 0o600)
 
 
 # ---------------------------------------------------------------------------
@@ -82,4 +83,5 @@ def write_conf(group, instance, data):
     path = conf_path(group, instance)
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w") as fh:
-        json.dump(data, fh, indent=4)
+        json.dump(data, fh, indent=2)
+    os.chmod(path, 0o600)

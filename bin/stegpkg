@@ -24,6 +24,7 @@ import shutil
 import subprocess
 import sys
 import uuid
+import re
 
 # ---------------------------------------------------------------------------
 # Third-party
@@ -45,6 +46,10 @@ from steglib.constants import (
     VERSION,
 )
 from steglib.group import GroupManager
+
+
+class PackageNotFoundError(Exception):
+    """Raised when a package cannot be located in the repos tree."""
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -93,7 +98,7 @@ class CapabilityManager:
                 continue
             try:
                 pkg_dir = self._engine.find_package_dir(pkg_name)
-            except SystemExit:
+            except PackageNotFoundError:
                 continue
             manifest = _load_manifest(pkg_dir)
             if manifest is None:
@@ -521,9 +526,8 @@ class PackageEngine:
             SystemExit: If the package is not found or is ambiguous.
         """
         if not os.path.isdir(self.repo_dir):
-            print(f"Error: Repos directory '{self.repo_dir}' does not exist."
+            raise PackageNotFoundError(f"Repos directory '{self.repo_dir}' does not exist."
                   " Did you run 'stegmap mount'?")
-            sys.exit(1)
 
         found = []
         for root, _dirs, files in os.walk(self.repo_dir):
@@ -531,20 +535,17 @@ class PackageEngine:
                 found.append(root)
 
         if not found:
-            print(f"Error: Package '{pkg_name}' not found in repos.")
-            sys.exit(1)
+            raise PackageNotFoundError(f"Package '{pkg_name}' not found in repos.")
 
         if target_repo:
             found = [p for p in found if f"/{target_repo}/" in p]
             if not found:
-                print(f"Error: Package '{pkg_name}' not found"
+                raise PackageNotFoundError(f"Package '{pkg_name}' not found"
                       f" in repo '{target_repo}'.")
-                sys.exit(1)
 
         if len(found) > 1:
-            print(f"Error: Multiple packages named '{pkg_name}' found."
+            raise PackageNotFoundError(f"Multiple packages named '{pkg_name}' found."
                   " Use --repo to disambiguate.")
-            sys.exit(1)
 
         return found[0]
 
@@ -857,6 +858,9 @@ def cmd_install(args, engine):
 
     seen = []
     for pkg in args.packages:
+        if not re.match(r"^[a-zA-Z0-9.\-_]+$", pkg):
+            print(f"Error: Invalid package name '{pkg}'. Must be alphanumeric, dots, dashes, or underscores.")
+            sys.exit(1)
         if pkg in seen:
             continue
         seen.append(pkg)
@@ -899,7 +903,7 @@ def cmd_reconfigure(args, engine):
                 instance_id=instance_id,
             )
             count += 1
-        except SystemExit:
+        except PackageNotFoundError:
             print(f"Warning: Could not reconfigure '{pkg_name}'"
                   f" (instance '{instance_id}').")
     print(f"Successfully reconfigured {count} instance(s)"
@@ -991,7 +995,7 @@ def cmd_upgrade(args, engine):
                 check=True,
             )
             count += 1
-        except (SystemExit, subprocess.CalledProcessError, OSError) as exc:
+        except (PackageNotFoundError, subprocess.CalledProcessError, OSError) as exc:
             print(f"Warning: Could not upgrade '{pkg_name}'"
                   f" (instance '{instance_id}'): {exc}")
     print(f"Upgraded {count} instance(s) in group '{engine.group_name}'.")
@@ -1154,7 +1158,7 @@ def _cascade_remove_integration(engine, dep_id, removed_ids):
                     ["stegctl", "--group", engine.group_name, "start", dep_id],
                     check=True,
                 )
-            except (SystemExit, subprocess.CalledProcessError):
+            except (PackageNotFoundError, subprocess.CalledProcessError):
                 print(f"Warning: Failed to reconfigure '{dep_id}'.")
 
 
