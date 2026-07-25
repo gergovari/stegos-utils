@@ -22,7 +22,7 @@ _stegctl() {
     _init_completion || return
     
     if [[ $cword -eq 1 ]]; then
-        COMPREPLY=( $(compgen -W "start stop status restart logs apply" -- "$cur") )
+        COMPREPLY=( $(compgen -W "start stop status restart logs" -- "$cur") )
     elif [[ $cword -eq 2 ]]; then
         local containers=$(find /stegos/persistent -mindepth 2 -maxdepth 2 -type d -exec basename {} \; 2>/dev/null)
         COMPREPLY=( $(compgen -W "$containers" -- "$cur") )

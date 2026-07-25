@@ -24,7 +24,7 @@ class BackendBase:
         self.pkg_path = pkg_path
         self.group_dir = group_dir
 
-    def execute(self, action, extra_args):
+    def execute(self, action, if_created=False):
         """Execute a lifecycle action."""
         raise NotImplementedError
 
@@ -77,13 +77,13 @@ class DockerComposeBackend(BackendBase):
                     print(f"Caching image '{image}' to group cache...")
                     subprocess.run(["docker", "save", "-o", cache_path, image])
                     
-    def execute(self, action, extra_args):
+    def execute(self, action, if_created=False):
         """
         Handle docker-compose specific actions for a package.
         
         Args:
             action (str): The lifecycle action to perform.
-            extra_args (list): Additional arguments to append to the command.
+            if_created (bool): If True, skip start if no containers exist.
         """
         compose_file = os.path.join(self.pkg_path, "docker-compose.yml")
         if not os.path.isfile(compose_file):
@@ -92,18 +92,16 @@ class DockerComposeBackend(BackendBase):
         
         cmd = ["docker", "compose", "-f", compose_file]
         if action == "start":
-            self._sync_docker_cache(compose_file, "pre-start")
-            cmd.extend(["up", "-d", "--remove-orphans"])
-        elif action == "apply":
-            # Check if the service has any containers; if not, skip applying
-            check_cmd = ["docker", "compose", "-f", compose_file, "ps", "-q", "-a"]
-            try:
-                result = subprocess.run(check_cmd, capture_output=True, text=True, check=True)
-                if not result.stdout.strip():
-                    return
-            except subprocess.CalledProcessError:
-                pass
-                
+            if if_created:
+                # Check if the service has any containers; if not, skip starting
+                check_cmd = ["docker", "compose", "-f", compose_file, "ps", "-q", "-a"]
+                try:
+                    result = subprocess.run(check_cmd, capture_output=True, text=True, check=True)
+                    if not result.stdout.strip():
+                        return
+                except subprocess.CalledProcessError:
+                    pass
+            
             self._sync_docker_cache(compose_file, "pre-start")
             cmd.extend(["up", "-d", "--remove-orphans"])
         elif action == "stop":
@@ -126,13 +124,10 @@ class DockerComposeBackend(BackendBase):
             print(f"[{self.pkg}] Unknown action '{action}'")
             return
             
-        if extra_args:
-            cmd.extend(extra_args)
-            
         try:
             print(f"[{self.pkg}] Executing docker-compose {action}...")
             subprocess.run(cmd, check=True)
-            if action in ("start", "apply"):
+            if action == "start":
                 self._sync_docker_cache(compose_file, "post-start")
         except subprocess.CalledProcessError as e:
             print(f"[{self.pkg}] Error: Command failed with code {e.returncode}")
@@ -149,17 +144,15 @@ class LifecycleManager:
         self.group_name = GroupManager.resolve(group_prefix)
         self.cont_dir = os.path.join(PERSISTENT_DIR, self.group_name)
 
-    def execute(self, action, package_name=None, extra_args=None):
+    def execute(self, action, package_name=None, if_created=False):
         """
         Execute an action on a specific package or all packages in the group.
         
         Args:
             action (str): The lifecycle action to perform (e.g., start, stop).
             package_name (str, optional): Specific package to target.
-            extra_args (list, optional): Additional arguments for the backend deployer.
+            if_created (bool): If True, backend will skip starting uncreated containers.
         """
-        if extra_args is None:
-            extra_args = []
             
         if not os.path.isdir(self.cont_dir):
             print(f"Error: Group directory '{self.cont_dir}' not found.")
@@ -205,7 +198,7 @@ class LifecycleManager:
                     print(f"[{pkg}] No state file found. Was it installed with stegpkg?")
                 continue
 
-            if action in ("start", "apply"):
+            if action == "start":
                 enabled_caps = st.get("enabled_caps", {})
                 for cap, provs in enabled_caps.items():
                     if not isinstance(provs, list):
@@ -213,13 +206,13 @@ class LifecycleManager:
                     for p in provs:
                         print(f"[{pkg}] Ensuring provider '{p}' is started...")
                         if p != pkg:
-                            self.execute(action, p, extra_args)
+                            self.execute(action, p, if_created)
 
             deployer = st.get("deployer")
             backend_cls = BACKENDS.get(deployer)
             if backend_cls:
                 backend = backend_cls(pkg, pkg_path, self.cont_dir)
-                backend.execute(action, extra_args)
+                backend.execute(action, if_created)
             else:
                 print(f"[{pkg}] Warning: Unknown deployer '{deployer}'")
 
@@ -227,20 +220,20 @@ def main():
     """Main entry point for stegctl."""
     parser = argparse.ArgumentParser(description="stegOS Runtime Orchestrator")
     parser.add_argument('--version', action='version', version=f'stegctl {VERSION}')
-    parser.add_argument("action", choices=["start", "stop", "restart", "status", "logs", "apply"], help="Action to perform")
+    parser.add_argument("action", choices=["start", "stop", "restart", "status", "logs"], help="Action to perform")
     parser.add_argument("package", nargs="?", help="Specific package to perform action on (defaults to all)")
     parser.add_argument("--group", help="Target group (optional if only one exists)")
-    parser.add_argument("extra_args", nargs=argparse.REMAINDER, help="Additional arguments to pass to docker-compose")
+    parser.add_argument("--if-created", action="store_true", help=argparse.SUPPRESS)
     
     args = parser.parse_args()
     
     manager = LifecycleManager(args.group)
     
     if args.action == "restart":
-        manager.execute("stop", args.package, args.extra_args)
-        manager.execute("start", args.package, args.extra_args)
+        manager.execute("stop", args.package, args.if_created)
+        manager.execute("start", args.package, args.if_created)
     else:
-        manager.execute(args.action, args.package, args.extra_args)
+        manager.execute(args.action, args.package, args.if_created)
 
 if __name__ == "__main__":
     try:
