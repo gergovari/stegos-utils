@@ -1,54 +1,39 @@
 #!/usr/bin/env python3
-import os
-import sys
+"""
+stegctl: stegOS Runtime Orchestrator.
+Manages the lifecycle of packages installed in stegOS groups.
+"""
+
 import argparse
+import hashlib
 import json
+import os
 import subprocess
+import sys
 
-STEGOS_ROOT = os.environ.get("STEGOS_ROOT", "/stegos")
+import yaml
 
-class GroupManager:
-    @staticmethod
-    def resolve_group(group_prefix=None):
-        containers_base = os.path.join(STEGOS_ROOT, "persistent")
-        if not os.path.isdir(containers_base):
-            if group_prefix:
-                return group_prefix
-            else:
-                print("Error: No groups exist and no group specified.")
-                sys.exit(1)
-        
-        all_groups = os.listdir(containers_base)
-        
-        if group_prefix is None:
-            if len(all_groups) == 1:
-                return all_groups[0]
-            elif len(all_groups) > 1:
-                print(f"Error: Multiple groups exist. You must specify --group. Available: {all_groups}")
-                sys.exit(1)
-            else:
-                print("Error: No groups exist and no group specified.")
-                sys.exit(1)
-        
-        matches = []
-        for d in all_groups:
-            if d == group_prefix or d.startswith(f"{group_prefix}_"):
-                matches.append(d)
-                
-        if len(matches) == 1:
-            return matches[0]
-        elif len(matches) > 1:
-            print(f"Error: Multiple groups match '{group_prefix}': {matches}")
-            sys.exit(1)
-        
-        return group_prefix
+from steglib.constants import VERSION, PERSISTENT_DIR, BACKEND_DIR, STATE_FILENAME, DOCKER_CACHE_DIR
+from steglib.group import GroupManager
+from steglib import state
 
 class LifecycleManager:
+    """Manages the lifecycle (start, stop, etc.) of stegOS packages within a group."""
+
     def __init__(self, group_prefix):
-        self.group_name = GroupManager.resolve_group(group_prefix)
-        self.cont_dir = os.path.join(STEGOS_ROOT, "persistent", self.group_name)
+        """Initialize the LifecycleManager with a specific group."""
+        self.group_name = GroupManager.resolve(group_prefix)
+        self.cont_dir = os.path.join(PERSISTENT_DIR, self.group_name)
 
     def execute(self, action, package_name=None, extra_args=None):
+        """
+        Execute an action on a specific package or all packages in the group.
+        
+        Args:
+            action (str): The lifecycle action to perform (e.g., start, stop).
+            package_name (str, optional): Specific package to target.
+            extra_args (list, optional): Additional arguments for the backend deployer.
+        """
         if extra_args is None:
             extra_args = []
             
@@ -63,15 +48,12 @@ class LifecycleManager:
             else:
                 matched = []
                 for d in os.listdir(self.cont_dir):
-                    state_file = os.path.join(self.cont_dir, d, "backend", ".stegpkg-state.json")
-                    if os.path.isfile(state_file):
-                        try:
-                            with open(state_file, "r") as f:
-                                state = json.load(f)
-                            if state.get("package") == package_name:
-                                matched.append(d)
-                        except:
-                            pass
+                    try:
+                        st = state.read_state(self.group_name, d)
+                        if st and st.get("package") == package_name:
+                            matched.append(d)
+                    except (json.JSONDecodeError, OSError, KeyError):
+                        pass
                 
                 if len(matched) == 1:
                     packages = matched
@@ -85,58 +67,62 @@ class LifecycleManager:
             packages = os.listdir(self.cont_dir)
         
         for pkg in packages:
-            pkg_path = os.path.join(self.cont_dir, pkg, "backend")
+            pkg_path = os.path.join(self.cont_dir, pkg, BACKEND_DIR)
             if not os.path.isdir(pkg_path):
                 continue
                 
-            state_file = os.path.join(pkg_path, ".stegpkg-state.json")
-            if not os.path.isfile(state_file):
+            try:
+                st = state.read_state(self.group_name, pkg)
+            except (json.JSONDecodeError, OSError, KeyError):
+                st = None
+
+            if not st:
                 if package_name:
                     print(f"[{pkg}] No state file found. Was it installed with stegpkg?")
                 continue
-                
-            with open(state_file, "r") as f:
-                state = json.load(f)
 
             if action == "start":
-                enabled_caps = state.get("enabled_caps", {})
+                enabled_caps = st.get("enabled_caps", {})
                 for cap, provs in enabled_caps.items():
                     if not isinstance(provs, list):
                         provs = [provs]
                     for p in provs:
                         print(f"[{pkg}] Ensuring provider '{p}' is started...")
-                        # Avoid infinite loop by not passing the same package name
                         if p != pkg:
                             self.execute(action, p, extra_args)
 
-
-            deployer = state.get("deployer")
+            deployer = st.get("deployer")
             if deployer == "docker-compose":
                 self._handle_docker_compose(action, pkg, pkg_path, extra_args)
             else:
                 print(f"[{pkg}] Warning: Unknown deployer '{deployer}'")
                 
     def _sync_docker_cache(self, compose_file, action):
-        import yaml
-        import hashlib
+        """
+        Synchronize docker images with the local group cache to allow offline starts.
         
+        Args:
+            compose_file (str): Path to the docker-compose.yml file.
+            action (str): Either 'pre-start' (load) or 'post-start' (save).
+        """
         try:
             with open(compose_file, 'r') as f:
                 compose_data = yaml.safe_load(f)
-        except Exception as e:
+        except (OSError, yaml.YAMLError) as e:
             print(f"Warning: Failed to read {compose_file} for caching: {e}")
             return
             
         images = []
         services = compose_data.get("services", {})
-        for svc_name, svc_data in services.items():
-            if "image" in svc_data:
-                images.append(svc_data["image"])
+        if services:
+            for svc_name, svc_data in services.items():
+                if isinstance(svc_data, dict) and "image" in svc_data:
+                    images.append(svc_data["image"])
                 
         if not images:
             return
             
-        cache_dir = os.path.join(self.cont_dir, ".docker-cache")
+        cache_dir = os.path.join(self.cont_dir, DOCKER_CACHE_DIR)
         os.makedirs(cache_dir, exist_ok=True)
         
         if action == "pre-start":
@@ -144,7 +130,6 @@ class LifecycleManager:
                 safe_name = hashlib.md5(image.encode()).hexdigest() + ".tar"
                 cache_path = os.path.join(cache_dir, safe_name)
                 if os.path.isfile(cache_path):
-                    # Check if already loaded to save time
                     check = subprocess.run(["docker", "image", "inspect", image], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                     if check.returncode != 0:
                         print(f"Loading cached image '{image}' from group cache...")
@@ -158,6 +143,15 @@ class LifecycleManager:
                     subprocess.run(["docker", "save", "-o", cache_path, image])
 
     def _handle_docker_compose(self, action, pkg, pkg_path, extra_args):
+        """
+        Handle docker-compose specific actions for a package.
+        
+        Args:
+            action (str): The lifecycle action to perform.
+            pkg (str): The name or ID of the package.
+            pkg_path (str): The path to the package's backend directory.
+            extra_args (list): Additional arguments to append to the command.
+        """
         compose_file = os.path.join(pkg_path, "docker-compose.yml")
         if not os.path.isfile(compose_file):
             print(f"[{pkg}] Error: docker-compose.yml missing.")
@@ -192,10 +186,12 @@ class LifecycleManager:
             print(f"[{pkg}] Error: Command failed with code {e.returncode}")
 
 def main():
+    """Main entry point for stegctl."""
     parser = argparse.ArgumentParser(description="stegOS Runtime Orchestrator")
+    parser.add_argument('--version', action='version', version=f'stegctl {VERSION}')
     parser.add_argument("action", choices=["start", "stop", "restart", "status", "logs", "pull"], help="Action to perform")
     parser.add_argument("package", nargs="?", help="Specific package to perform action on (defaults to all)")
-    parser.add_argument("--group", help="Target Stegmap group (optional if only one exists)")
+    parser.add_argument("--group", help="Target group (optional if only one exists)")
     parser.add_argument("extra_args", nargs=argparse.REMAINDER, help="Additional arguments to pass to docker-compose")
     
     args = parser.parse_args()
