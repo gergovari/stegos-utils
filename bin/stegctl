@@ -94,6 +94,18 @@ class DockerComposeBackend(BackendBase):
         if action == "start":
             self._sync_docker_cache(compose_file, "pre-start")
             cmd.extend(["up", "-d", "--remove-orphans"])
+        elif action == "apply":
+            # Check if the service has any containers; if not, skip applying
+            check_cmd = ["docker", "compose", "-f", compose_file, "ps", "-q", "-a"]
+            try:
+                result = subprocess.run(check_cmd, capture_output=True, text=True, check=True)
+                if not result.stdout.strip():
+                    return
+            except subprocess.CalledProcessError:
+                pass
+                
+            self._sync_docker_cache(compose_file, "pre-start")
+            cmd.extend(["up", "-d", "--remove-orphans"])
         elif action == "stop":
             # Check if the service has any containers; if not, skip stopping
             check_cmd = ["docker", "compose", "-f", compose_file, "ps", "-q", "-a"]
@@ -120,7 +132,7 @@ class DockerComposeBackend(BackendBase):
         try:
             print(f"[{self.pkg}] Executing docker-compose {action}...")
             subprocess.run(cmd, check=True)
-            if action == "start":
+            if action in ("start", "apply"):
                 self._sync_docker_cache(compose_file, "post-start")
         except subprocess.CalledProcessError as e:
             print(f"[{self.pkg}] Error: Command failed with code {e.returncode}")
@@ -193,7 +205,7 @@ class LifecycleManager:
                     print(f"[{pkg}] No state file found. Was it installed with stegpkg?")
                 continue
 
-            if action == "start":
+            if action in ("start", "apply"):
                 enabled_caps = st.get("enabled_caps", {})
                 for cap, provs in enabled_caps.items():
                     if not isinstance(provs, list):
@@ -215,7 +227,7 @@ def main():
     """Main entry point for stegctl."""
     parser = argparse.ArgumentParser(description="stegOS Runtime Orchestrator")
     parser.add_argument('--version', action='version', version=f'stegctl {VERSION}')
-    parser.add_argument("action", choices=["start", "stop", "restart", "status", "logs"], help="Action to perform")
+    parser.add_argument("action", choices=["start", "stop", "restart", "status", "logs", "apply"], help="Action to perform")
     parser.add_argument("package", nargs="?", help="Specific package to perform action on (defaults to all)")
     parser.add_argument("--group", help="Target group (optional if only one exists)")
     parser.add_argument("extra_args", nargs=argparse.REMAINDER, help="Additional arguments to pass to docker-compose")

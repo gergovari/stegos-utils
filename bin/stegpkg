@@ -987,7 +987,7 @@ def cmd_upgrade(args, engine):
             )
             print(f"[{instance_id}] Ensuring instance is up to date...")
             subprocess.run(
-                ["stegctl", "--group", engine.group_name, "start", instance_id],
+                ["stegctl", "--group", engine.group_name, "apply", instance_id],
                 check=True,
             )
             count += 1
