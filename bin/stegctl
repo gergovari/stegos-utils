@@ -116,6 +116,47 @@ class LifecycleManager:
             else:
                 print(f"[{pkg}] Warning: Unknown deployer '{deployer}'")
                 
+    def _sync_docker_cache(self, compose_file, action):
+        import yaml
+        import hashlib
+        
+        try:
+            with open(compose_file, 'r') as f:
+                compose_data = yaml.safe_load(f)
+        except Exception as e:
+            print(f"Warning: Failed to read {compose_file} for caching: {e}")
+            return
+            
+        images = []
+        services = compose_data.get("services", {})
+        for svc_name, svc_data in services.items():
+            if "image" in svc_data:
+                images.append(svc_data["image"])
+                
+        if not images:
+            return
+            
+        cache_dir = os.path.join(self.cont_dir, ".docker-cache")
+        os.makedirs(cache_dir, exist_ok=True)
+        
+        if action == "pre-start":
+            for image in images:
+                safe_name = hashlib.md5(image.encode()).hexdigest() + ".tar"
+                cache_path = os.path.join(cache_dir, safe_name)
+                if os.path.isfile(cache_path):
+                    # Check if already loaded to save time
+                    check = subprocess.run(["docker", "image", "inspect", image], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                    if check.returncode != 0:
+                        print(f"Loading cached image '{image}' from group cache...")
+                        subprocess.run(["docker", "load", "-i", cache_path])
+        elif action == "post-start":
+            for image in images:
+                safe_name = hashlib.md5(image.encode()).hexdigest() + ".tar"
+                cache_path = os.path.join(cache_dir, safe_name)
+                if not os.path.isfile(cache_path):
+                    print(f"Caching image '{image}' to group cache...")
+                    subprocess.run(["docker", "save", "-o", cache_path, image])
+
     def _handle_docker_compose(self, action, pkg, pkg_path, extra_args):
         compose_file = os.path.join(pkg_path, "docker-compose.yml")
         if not os.path.isfile(compose_file):
@@ -126,7 +167,8 @@ class LifecycleManager:
         
         cmd = ["docker", "compose", "-f", compose_file]
         if action == "start":
-            cmd.extend(["up", "-d"])
+            self._sync_docker_cache(compose_file, "pre-start")
+            cmd.extend(["up", "-d", "--remove-orphans"])
         elif action == "stop":
             cmd.append("down")
         elif action == "status":
@@ -144,6 +186,8 @@ class LifecycleManager:
             
         try:
             subprocess.run(cmd, check=True)
+            if action == "start":
+                self._sync_docker_cache(compose_file, "post-start")
         except subprocess.CalledProcessError as e:
             print(f"[{pkg}] Error: Command failed with code {e.returncode}")
 
