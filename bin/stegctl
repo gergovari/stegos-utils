@@ -13,7 +13,7 @@ import sys
 
 import yaml
 
-from steglib.constants import VERSION, PERSISTENT_DIR, BACKEND_DIR, STATE_FILENAME
+from steglib.constants import VERSION, PERSISTENT_DIR, BACKEND_DIR, STATE_FILENAME, DOCKER_CACHE_DIR
 from steglib.group import GroupManager
 from steglib import state
 
