@@ -17,6 +17,118 @@ from steglib.constants import VERSION, PERSISTENT_DIR, BACKEND_DIR, STATE_FILENA
 from steglib.group import GroupManager
 from steglib import state
 
+class BackendBase:
+    """Abstract base class for runtime backends."""
+    def __init__(self, pkg, pkg_path, group_dir):
+        self.pkg = pkg
+        self.pkg_path = pkg_path
+        self.group_dir = group_dir
+
+    def execute(self, action, extra_args):
+        """Execute a lifecycle action."""
+        raise NotImplementedError
+
+class DockerComposeBackend(BackendBase):
+    """Docker Compose runtime backend."""
+    
+    def _sync_docker_cache(self, compose_file, action):
+        """
+        Synchronize docker images with the local group cache to allow offline starts.
+        
+        Args:
+            compose_file (str): Path to the docker-compose.yml file.
+            action (str): Either 'pre-start' (load) or 'post-start' (save).
+        """
+        try:
+            with open(compose_file, 'r') as f:
+                compose_data = yaml.safe_load(f)
+        except (OSError, yaml.YAMLError) as e:
+            print(f"Warning: Failed to read {compose_file} for caching: {e}")
+            return
+            
+        images = []
+        services = compose_data.get("services", {})
+        if services:
+            for svc_name, svc_data in services.items():
+                if isinstance(svc_data, dict) and "image" in svc_data:
+                    images.append(svc_data["image"])
+                
+        if not images:
+            return
+            
+        # Use the group directory for caching
+        cache_dir = os.path.join(self.group_dir, DOCKER_CACHE_DIR)
+        os.makedirs(cache_dir, exist_ok=True)
+        
+        if action == "pre-start":
+            for image in images:
+                safe_name = hashlib.md5(image.encode()).hexdigest() + ".tar"
+                cache_path = os.path.join(cache_dir, safe_name)
+                if os.path.isfile(cache_path):
+                    check = subprocess.run(["docker", "image", "inspect", image], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                    if check.returncode != 0:
+                        print(f"Loading cached image '{image}' from group cache...")
+                        subprocess.run(["docker", "load", "-i", cache_path])
+        elif action == "post-start":
+            for image in images:
+                safe_name = hashlib.md5(image.encode()).hexdigest() + ".tar"
+                cache_path = os.path.join(cache_dir, safe_name)
+                if not os.path.isfile(cache_path):
+                    print(f"Caching image '{image}' to group cache...")
+                    subprocess.run(["docker", "save", "-o", cache_path, image])
+                    
+    def execute(self, action, extra_args):
+        """
+        Handle docker-compose specific actions for a package.
+        
+        Args:
+            action (str): The lifecycle action to perform.
+            extra_args (list): Additional arguments to append to the command.
+        """
+        compose_file = os.path.join(self.pkg_path, "docker-compose.yml")
+        if not os.path.isfile(compose_file):
+            print(f"[{self.pkg}] Error: docker-compose.yml missing.")
+            return
+        
+        cmd = ["docker", "compose", "-f", compose_file]
+        if action == "start":
+            self._sync_docker_cache(compose_file, "pre-start")
+            cmd.extend(["up", "-d", "--remove-orphans"])
+        elif action == "stop":
+            # Check if the service has any containers; if not, skip stopping
+            check_cmd = ["docker", "compose", "-f", compose_file, "ps", "-q", "-a"]
+            try:
+                result = subprocess.run(check_cmd, capture_output=True, text=True, check=True)
+                if not result.stdout.strip():
+                    # No containers exist, nothing to stop
+                    return
+            except subprocess.CalledProcessError:
+                pass # If check fails, fall through to down just in case
+            
+            cmd.append("down")
+        elif action == "status":
+            cmd.append("ps")
+        elif action == "logs":
+            cmd.append("logs")
+        else:
+            print(f"[{self.pkg}] Unknown action '{action}'")
+            return
+            
+        if extra_args:
+            cmd.extend(extra_args)
+            
+        try:
+            print(f"[{self.pkg}] Executing docker-compose {action}...")
+            subprocess.run(cmd, check=True)
+            if action == "start":
+                self._sync_docker_cache(compose_file, "post-start")
+        except subprocess.CalledProcessError as e:
+            print(f"[{self.pkg}] Error: Command failed with code {e.returncode}")
+
+BACKENDS = {
+    "docker-compose": DockerComposeBackend,
+}
+
 class LifecycleManager:
     """Manages the lifecycle (start, stop, etc.) of stegOS packages within a group."""
 
@@ -92,98 +204,12 @@ class LifecycleManager:
                             self.execute(action, p, extra_args)
 
             deployer = st.get("deployer")
-            if deployer == "docker-compose":
-                self._handle_docker_compose(action, pkg, pkg_path, extra_args)
+            backend_cls = BACKENDS.get(deployer)
+            if backend_cls:
+                backend = backend_cls(pkg, pkg_path, self.cont_dir)
+                backend.execute(action, extra_args)
             else:
                 print(f"[{pkg}] Warning: Unknown deployer '{deployer}'")
-                
-    def _sync_docker_cache(self, compose_file, action):
-        """
-        Synchronize docker images with the local group cache to allow offline starts.
-        
-        Args:
-            compose_file (str): Path to the docker-compose.yml file.
-            action (str): Either 'pre-start' (load) or 'post-start' (save).
-        """
-        try:
-            with open(compose_file, 'r') as f:
-                compose_data = yaml.safe_load(f)
-        except (OSError, yaml.YAMLError) as e:
-            print(f"Warning: Failed to read {compose_file} for caching: {e}")
-            return
-            
-        images = []
-        services = compose_data.get("services", {})
-        if services:
-            for svc_name, svc_data in services.items():
-                if isinstance(svc_data, dict) and "image" in svc_data:
-                    images.append(svc_data["image"])
-                
-        if not images:
-            return
-            
-        # Use the group directory for caching
-        cache_dir = os.path.join(self.cont_dir, DOCKER_CACHE_DIR)
-        os.makedirs(cache_dir, exist_ok=True)
-        
-        if action == "pre-start":
-            for image in images:
-                safe_name = hashlib.md5(image.encode()).hexdigest() + ".tar"
-                cache_path = os.path.join(cache_dir, safe_name)
-                if os.path.isfile(cache_path):
-                    check = subprocess.run(["docker", "image", "inspect", image], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                    if check.returncode != 0:
-                        print(f"Loading cached image '{image}' from group cache...")
-                        subprocess.run(["docker", "load", "-i", cache_path])
-        elif action == "post-start":
-            for image in images:
-                safe_name = hashlib.md5(image.encode()).hexdigest() + ".tar"
-                cache_path = os.path.join(cache_dir, safe_name)
-                if not os.path.isfile(cache_path):
-                    print(f"Caching image '{image}' to group cache...")
-                    subprocess.run(["docker", "save", "-o", cache_path, image])
-                
-
-    def _handle_docker_compose(self, action, pkg, pkg_path, extra_args):
-        """
-        Handle docker-compose specific actions for a package.
-        
-        Args:
-            action (str): The lifecycle action to perform.
-            pkg (str): The name or ID of the package.
-            pkg_path (str): The path to the package's backend directory.
-            extra_args (list): Additional arguments to append to the command.
-        """
-        compose_file = os.path.join(pkg_path, "docker-compose.yml")
-        if not os.path.isfile(compose_file):
-            print(f"[{pkg}] Error: docker-compose.yml missing.")
-            return
-            
-        print(f"[{pkg}] Executing docker-compose {action}...")
-        
-        cmd = ["docker", "compose", "-f", compose_file]
-        if action == "start":
-            self._sync_docker_cache(compose_file, "pre-start")
-            cmd.extend(["up", "-d", "--remove-orphans"])
-        elif action == "stop":
-            cmd.append("down")
-        elif action == "status":
-            cmd.append("ps")
-        elif action == "logs":
-            cmd.append("logs")
-        else:
-            print(f"[{pkg}] Unknown action '{action}'")
-            return
-            
-        if extra_args:
-            cmd.extend(extra_args)
-            
-        try:
-            subprocess.run(cmd, check=True)
-            if action == "start":
-                self._sync_docker_cache(compose_file, "post-start")
-        except subprocess.CalledProcessError as e:
-            print(f"[{pkg}] Error: Command failed with code {e.returncode}")
 
 def main():
     """Main entry point for stegctl."""
