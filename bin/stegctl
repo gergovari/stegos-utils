@@ -103,6 +103,13 @@ class DockerComposeBackend(BackendBase):
                     pass
             
             self._sync_docker_cache(compose_file, "pre-start")
+            
+            # Apply SELinux context so the Docker daemon can access the files
+            try:
+                subprocess.run(["chcon", "-R", "-t", "container_file_t", self.pkg_path], check=False, capture_output=True)
+            except Exception:
+                pass
+                
             cmd.extend(["up", "-d", "--remove-orphans"])
         elif action == "stop":
             # Check if the service has any containers; if not, skip stopping
@@ -125,12 +132,23 @@ class DockerComposeBackend(BackendBase):
             return
             
         try:
-            print(f"[{self.pkg}] Executing docker-compose {action}...")
-            subprocess.run(cmd, check=True)
             if action == "start":
+                print(f"[{self.pkg}] Starting package...")
+                result = subprocess.run(cmd, check=True, capture_output=True, text=True)
                 self._sync_docker_cache(compose_file, "post-start")
+            elif action == "stop":
+                print(f"[{self.pkg}] Stopping package...")
+                result = subprocess.run(cmd, check=True, capture_output=True, text=True)
+            else:
+                # For status and logs, we let the output flow to the user
+                subprocess.run(cmd, check=True)
         except subprocess.CalledProcessError as e:
-            print(f"[{self.pkg}] Error: Command failed with code {e.returncode}")
+            print(f"[{self.pkg}] Error during {action}:")
+            if e.stderr:
+                print(e.stderr.strip())
+            elif e.stdout:
+                print(e.stdout.strip())
+            print(f"[{self.pkg}] Command failed with code {e.returncode}")
 
 BACKENDS = {
     "docker-compose": DockerComposeBackend,
