@@ -281,11 +281,12 @@ class DockerComposeDeployer(DeployerBase):
         # Resolve exports from this package's consume declarations.
         exports = self._resolve_exports()
 
-        # Compute injected environment variables from capability providers.
+        # Compute injected environment variables and networks from capability providers.
         injected_env = self._compute_injected_env(cap_manager, exports)
+        injected_networks = self._compute_injected_networks(cap_manager)
 
         # Render templates.
-        self._render_templates(injected_env)
+        self._render_templates(injected_env, injected_networks)
 
         # Copy static files.
         self._copy_files()
@@ -354,7 +355,28 @@ class DockerComposeDeployer(DeployerBase):
 
         return injected_env
 
-    def _render_templates(self, injected_env):
+    def _compute_injected_networks(self, cap_manager):
+        """Build a list of network names injected by capability providers."""
+        enabled_caps = self.final_conf.get("_enabled_capabilities", {})
+        networks = []
+
+        for cap_name, selected in enabled_caps.items():
+            providers = cap_manager.get_providers(cap_name)
+            if not isinstance(selected, list):
+                selected = [selected]
+
+            for prov_id in selected:
+                if prov_id not in providers:
+                    continue
+                prov_info = providers[prov_id]
+                dc_rules = prov_info.get("injector", {}).get("docker-compose", {})
+                for net in dc_rules.get("networks", []):
+                    if net not in networks:
+                        networks.append(net)
+
+        return networks
+
+    def _render_templates(self, injected_env, injected_networks):
         """Render Jinja2 templates into the output directory."""
         templates = self.config.get("templates", [
             {"src": "docker-compose.yml.j2", "dest": "docker-compose.yml"},
@@ -376,8 +398,66 @@ class DockerComposeDeployer(DeployerBase):
             rendered = tmpl.render(
                 config=self.final_conf,
                 global_config=self.global_conf,
-                injected_env=injected_env,
             )
+
+            # Dynamically inject capabilities into docker-compose.yml
+            if dest == "docker-compose.yml" and (injected_env or injected_networks):
+                try:
+                    compose_data = yaml.safe_load(rendered)
+                    if not isinstance(compose_data, dict):
+                        compose_data = {}
+                        
+                    services = compose_data.get("services", {})
+                    for svc_name, svc_data in services.items():
+                        if not isinstance(svc_data, dict):
+                            continue
+                            
+                        # Inject Environment Variables
+                        if injected_env:
+                            env = svc_data.get("environment", {})
+                            if isinstance(env, list):
+                                # Convert list format to dict format for easier merging
+                                new_env = {}
+                                for e in env:
+                                    if "=" in e:
+                                        k, v = e.split("=", 1)
+                                        new_env[k] = v
+                                env = new_env
+                            
+                            for k, v in injected_env.items():
+                                env[k] = str(v)
+                            svc_data["environment"] = env
+
+                        # Inject Networks
+                        if injected_networks:
+                            svc_nets = svc_data.get("networks", [])
+                            if isinstance(svc_nets, dict):
+                                svc_nets = list(svc_nets.keys())
+                            if not isinstance(svc_nets, list):
+                                svc_nets = []
+                            
+                            for net in injected_networks:
+                                if net not in svc_nets:
+                                    svc_nets.append(net)
+                                    
+                            if "default" not in svc_nets:
+                                svc_nets.append("default")
+                                
+                            svc_data["networks"] = svc_nets
+
+                    # Define injected external networks globally
+                    if injected_networks:
+                        global_nets = compose_data.get("networks", {})
+                        if not isinstance(global_nets, dict):
+                            global_nets = {}
+                        for net in injected_networks:
+                            if net not in global_nets:
+                                global_nets[net] = {"external": True}
+                        compose_data["networks"] = global_nets
+
+                    rendered = yaml.dump(compose_data, default_flow_style=False, sort_keys=False)
+                except Exception as e:
+                    print(f"Warning: Failed to dynamically inject capabilities into {dest}: {e}")
 
             dest_path = os.path.join(self.out_dir, os.path.normpath(dest))
             os.makedirs(os.path.dirname(dest_path) or ".", exist_ok=True)
@@ -862,7 +942,7 @@ def cmd_remove(args, engine):
         print(f"Stopping instance '{real_id}'...")
         try:
             subprocess.run(
-                ["stegctl", "stop", real_id, "--group", engine.group_name],
+                ["stegctl", "--group", engine.group_name, "stop", real_id],
                 check=True,
             )
         except subprocess.CalledProcessError:
@@ -907,12 +987,12 @@ def cmd_upgrade(args, engine):
             )
             print(f"[{instance_id}] Pulling latest images...")
             subprocess.run(
-                ["stegctl", "pull", instance_id, "--group", engine.group_name],
+                ["stegctl", "--group", engine.group_name, "pull", instance_id],
                 check=True,
             )
             print(f"[{instance_id}] Restarting...")
             subprocess.run(
-                ["stegctl", "start", instance_id, "--group", engine.group_name],
+                ["stegctl", "--group", engine.group_name, "start", instance_id],
                 check=True,
             )
             count += 1
@@ -969,6 +1049,51 @@ def cmd_list(args, engine):
 
     if count == 0:
         print("  (none)")
+
+
+def cmd_clean(args, engine):
+    """Handle the ``clean`` subcommand to delete unmanaged data directories."""
+    if not os.path.isdir(engine.group_dir):
+        print(f"Group directory '{engine.group_dir}' does not exist.")
+        return
+
+    unmanaged = []
+    for name in os.listdir(engine.group_dir):
+        if name in [GLOBAL_CONF_FILENAME, ".docker-cache"]:
+            continue
+        path = os.path.join(engine.group_dir, name)
+        if not os.path.isdir(path):
+            continue
+        
+        st = state.read_state(engine.group_name, name)
+        if st is None:
+            unmanaged.append(path)
+
+    if not unmanaged:
+        print(f"No unmanaged directories found in group '{engine.group_name}'.")
+        return
+
+    print("Found unmanaged directories:")
+    for path in unmanaged:
+        print(f"  - {path}")
+
+    if args.yes:
+        ans = "y"
+    else:
+        ans = input("Delete these directories permanently? [y/N]: ").strip().lower()
+
+    if ans == "y":
+        count = 0
+        for path in unmanaged:
+            try:
+                shutil.rmtree(path)
+                print(f"Deleted {path}")
+                count += 1
+            except OSError as e:
+                print(f"Failed to delete {path}: {e}")
+        print(f"Successfully cleaned {count} directory(ies).")
+    else:
+        print("Aborted.")
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -1031,8 +1156,7 @@ def _cascade_remove_integration(engine, dep_id, removed_ids):
                 )
                 print(f"[{dep_id}] Restarting...")
                 subprocess.run(
-                    ["stegctl", "start", dep_id,
-                     "--group", engine.group_name],
+                    ["stegctl", "--group", engine.group_name, "start", dep_id],
                     check=True,
                 )
             except (SystemExit, subprocess.CalledProcessError):
@@ -1097,6 +1221,11 @@ def main():
     p = subparsers.add_parser("list", help="List installed packages")
     p.add_argument("--group", help="Target group")
 
+    # -- clean --------------------------------------------------------------
+    p = subparsers.add_parser("clean", help="Remove unmanaged instance directories")
+    p.add_argument("--group", help="Target group")
+    p.add_argument("-y", "--yes", action="store_true", help="Automatic yes to prompts")
+
     args = parser.parse_args()
     engine = PackageEngine(args.group)
 
@@ -1107,6 +1236,7 @@ def main():
         "upgrade": cmd_upgrade,
         "update": cmd_update,
         "list": cmd_list,
+        "clean": cmd_clean,
     }
     commands[args.command](args, engine)
 
