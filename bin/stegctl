@@ -158,36 +158,88 @@ class LifecycleManager:
             print(f"Error: Group directory '{self.cont_dir}' not found.")
             sys.exit(1)
 
+        # Get all valid packages in the group
+        all_pkgs = [d for d in os.listdir(self.cont_dir) if os.path.isdir(os.path.join(self.cont_dir, d, BACKEND_DIR))]
+        
+        # Build dependency graph
+        graph = {pkg: set() for pkg in all_pkgs}
+        for pkg in all_pkgs:
+            try:
+                st = state.read_state(self.group_name, pkg)
+                if st:
+                    enabled_caps = st.get("enabled_caps", {})
+                    for provs in enabled_caps.values():
+                        if not isinstance(provs, list):
+                            provs = [provs]
+                        for p in provs:
+                            if p in graph and p != pkg:
+                                graph[pkg].add(p)
+            except (json.JSONDecodeError, OSError, KeyError):
+                pass
+                
+        # Topological sort
+        visited = set()
+        temp = set()
+        topo_order = []
+        
+        def visit(n):
+            if n in temp:
+                print(f"Warning: Circular dependency detected involving '{n}'")
+                return
+            if n not in visited:
+                temp.add(n)
+                for dep in sorted(graph.get(n, [])):
+                    visit(dep)
+                temp.remove(n)
+                visited.add(n)
+                topo_order.append(n)
+                
+        for n in sorted(all_pkgs):
+            if n not in visited:
+                visit(n)
+                
+        # Resolve target package if specified
         if package_name:
-            target_path = os.path.join(self.cont_dir, package_name)
-            if os.path.isdir(target_path):
-                packages = [package_name]
-            else:
+            if package_name not in all_pkgs:
                 matched = []
-                for d in os.listdir(self.cont_dir):
+                for pkg in all_pkgs:
                     try:
-                        st = state.read_state(self.group_name, d)
+                        st = state.read_state(self.group_name, pkg)
                         if st and st.get("package") == package_name:
-                            matched.append(d)
-                    except (json.JSONDecodeError, OSError, KeyError):
+                            matched.append(pkg)
+                    except Exception:
                         pass
                 
                 if len(matched) == 1:
-                    packages = matched
+                    package_name = matched[0]
                 elif len(matched) > 1:
                     print(f"Error: Multiple instances of '{package_name}' found. Please specify instance ID instead: {matched}")
                     sys.exit(1)
                 else:
                     print(f"Error: No instance or package named '{package_name}' found in group '{self.group_name}'.")
                     sys.exit(1)
+            
+            if action == "start":
+                # For start, target package and all its transitive dependencies
+                target_set = set()
+                def collect_deps(n):
+                    if n not in target_set:
+                        target_set.add(n)
+                        for d in graph.get(n, []):
+                            collect_deps(d)
+                collect_deps(package_name)
+                packages_to_run = [p for p in topo_order if p in target_set]
+            else:
+                # For stop, restart, etc., just operate on the single package
+                packages_to_run = [package_name]
         else:
-            packages = os.listdir(self.cont_dir)
-        
-        for pkg in packages:
-            pkg_path = os.path.join(self.cont_dir, pkg, BACKEND_DIR)
-            if not os.path.isdir(pkg_path):
-                continue
+            if action in ("stop", "restart"):
+                packages_to_run = list(reversed(topo_order))
+            else:
+                packages_to_run = topo_order
                 
+        # Execute action
+        for pkg in packages_to_run:
             try:
                 st = state.read_state(self.group_name, pkg)
             except (json.JSONDecodeError, OSError, KeyError):
@@ -198,19 +250,10 @@ class LifecycleManager:
                     print(f"[{pkg}] No state file found. Was it installed with stegpkg?")
                 continue
 
-            if action == "start":
-                enabled_caps = st.get("enabled_caps", {})
-                for cap, provs in enabled_caps.items():
-                    if not isinstance(provs, list):
-                        provs = [provs]
-                    for p in provs:
-                        print(f"[{pkg}] Ensuring provider '{p}' is started...")
-                        if p != pkg:
-                            self.execute(action, p, if_created)
-
             deployer = st.get("deployer")
             backend_cls = BACKENDS.get(deployer)
             if backend_cls:
+                pkg_path = os.path.join(self.cont_dir, pkg, BACKEND_DIR)
                 backend = backend_cls(pkg, pkg_path, self.cont_dir)
                 backend.execute(action, if_created)
             else:
