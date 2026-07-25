@@ -120,6 +120,7 @@ cmd_mount() {
 		if ! mount -t tmpfs -o "$mount_opts" tmpfs "$STEGOS_ROOT"; then
 			log_fatal "Failed to establish tmpfs on $STEGOS_ROOT."
 		fi
+		mount --make-shared "$STEGOS_ROOT"
 	fi
 	mkdir -p "$BASE_MNT_ROOT"
 
