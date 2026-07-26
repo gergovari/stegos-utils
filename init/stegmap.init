@@ -12,12 +12,17 @@ case "$1" in
   start)
     echo -n "Mounting stegOS devices: "
     # Wait for the stegd socket to be ready
-    for i in 1 2 3 4 5; do
+    for i in $(seq 1 15); do
         if [ -S /run/stegos/stegos.sock ]; then
             break
         fi
         sleep 1
     done
+    if [ ! -S /run/stegos/stegos.sock ]; then
+        echo "[CRITICAL] stegd socket not found after 15 seconds! Is stegd running?"
+        echo "failed."
+        exit 1
+    fi
     /usr/bin/stegmap mount
     echo "done."
     ;;
