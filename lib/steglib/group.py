@@ -17,7 +17,7 @@ class GroupManager:
 
     @staticmethod
     def resolve(prefix=None):
-        """Resolve a group name from an optional prefix.
+        """Resolves a group name from an optional prefix.
 
         Resolution rules:
           - No prefix, one group exists → return that group.
@@ -34,14 +34,12 @@ class GroupManager:
             The fully-qualified group name string.
 
         Raises:
-            SystemExit: If resolution is ambiguous or no groups exist.
+            ValueError: If resolution is ambiguous or no groups exist.
         """
         if not os.path.isdir(PERSISTENT_DIR):
             if prefix:
                 return prefix
-            print("Error: No groups found. Initialize a drive with"
-                  " 'steggroup init' first.")
-            sys.exit(1)
+            raise ValueError("No groups found. Initialize a drive with 'steggroup init' first.")
 
         all_groups = sorted(
             d for d in os.listdir(PERSISTENT_DIR)
@@ -61,12 +59,8 @@ class GroupManager:
                         if choice.isdigit() and 1 <= int(choice) <= len(all_groups):
                             return all_groups[int(choice) - 1]
                         print("Invalid selection. Try again.")
-                print("Error: Multiple groups exist. Specify --group."
-                      f" Available: {all_groups}")
-                sys.exit(1)
-            print("Error: No groups found. Initialize a drive with"
-                  " 'steggroup init' first.")
-            sys.exit(1)
+                raise ValueError(f"Multiple groups exist. Specify --group. Available: {all_groups}")
+            raise ValueError("No groups found. Initialize a drive with 'steggroup init' first.")
 
         # Exact match, then prefix match (name before the UUID suffix).
         matches = [
@@ -86,8 +80,7 @@ class GroupManager:
                     if choice.isdigit() and 1 <= int(choice) <= len(matches):
                         return matches[int(choice) - 1]
                     print("Invalid selection. Try again.")
-            print(f"Error: Ambiguous group prefix '{prefix}': {matches}")
-            sys.exit(1)
+            raise ValueError(f"Ambiguous group prefix '{prefix}': {matches}")
 
         # No match — assume literal (stegmap may create it later).
         return prefix
