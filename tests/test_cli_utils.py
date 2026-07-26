@@ -43,3 +43,17 @@ def test_do_local_prompt_simple(mock_input, mock_tty):
     
     mock_input.return_value = ""
     assert do_local_prompt("Msg", default="world") == "world"
+
+@patch("sys.stdin.isatty", return_value=True)
+@patch("builtins.input")
+def test_do_local_prompt_eof(mock_input, mock_tty):
+    # Test that EOFError acts like an empty input (accepts default)
+    mock_input.side_effect = EOFError
+    assert do_local_prompt("Msg", default="world") == "world"
+    
+    mock_input.side_effect = EOFError
+    assert do_local_prompt("Msg", choices=["A", "B"], default="B") == "B"
+    
+    mock_input.side_effect = EOFError
+    assert do_local_prompt("Msg", multiple=True, default="def") == ["def"]
+
