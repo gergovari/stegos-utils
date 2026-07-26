@@ -9,6 +9,8 @@ from urllib.parse import urlparse, parse_qs
 logger = logging.getLogger(__name__)
 
 class StegRequestHandler(http.server.BaseHTTPRequestHandler):
+    protocol_version = "HTTP/1.1"
+
     def address_string(self):
         if not self.client_address:
             return "unix-socket"
