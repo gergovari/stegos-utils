@@ -15,7 +15,7 @@ PIDFILE=/var/run/$NAME.pid
 case "$1" in
   start)
     echo -n "Starting stegOS Daemon: "
-    nohup $DAEMON --unix-socket /run/stegos/stegos.sock </dev/null > /dev/null 2>&1 &
+    nohup /usr/bin/python3 $DAEMON --unix-socket /run/stegos/stegos.sock </dev/null > /dev/null 2>&1 &
     echo $! > $PIDFILE
     
     # Wait for the daemon to be up
