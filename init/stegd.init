@@ -15,9 +15,20 @@ PIDFILE=/var/run/$NAME.pid
 case "$1" in
   start)
     echo -n "Starting stegOS Daemon: "
-    # Fully detach the process to prevent it from being killed when the init script exits
-    nohup $DAEMON --unix-socket /run/stegos/stegos.sock </dev/null > /var/log/stegd.log 2>&1 &
+    PYTHONUNBUFFERED=1 nohup /usr/bin/python3 $DAEMON --unix-socket /run/stegos/stegos.sock </dev/null > /var/log/stegd.log 2>&1 &
     echo $! > $PIDFILE
+    
+    # Wait for the daemon to be up
+    for i in $(seq 1 15); do
+        if [ -S /run/stegos/stegos.sock ]; then
+            break
+        fi
+        sleep 1
+    done
+    if [ ! -S /run/stegos/stegos.sock ]; then
+        echo "failed (socket timeout)."
+        exit 1
+    fi
     echo "done."
     ;;
   stop)
