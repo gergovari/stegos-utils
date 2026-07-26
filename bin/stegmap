@@ -9,7 +9,7 @@ import argparse
 import logging
 import sys
 
-from steglib.mapper import DriveMapper
+from steglib.client import StegClient
 
 def main():
     parser = argparse.ArgumentParser(description="stegOS Drive Mapper Utility")
@@ -23,6 +23,7 @@ def main():
     
     # Verbosity
     parser.add_argument("-v", "--verbose", action="store_true", help="Enable verbose logging")
+    parser.add_argument("--daemon-url", help="URL of the stegd daemon (default: unix:///run/stegos/stegos.sock or STEGOS_DAEMON_URL)")
     
     args = parser.parse_args()
     
@@ -35,13 +36,15 @@ def main():
         format="[%(levelname)s] %(message)s"
     )
     
-    mapper = DriveMapper()
-    
+    client = StegClient(url=args.daemon_url)
     try:
-        if args.command == "mount":
-            mapper.mount_all()
-        elif args.command == "unmount":
-            mapper.unmount_all()
+        args_dict = vars(args).copy()
+        if "command" in args_dict:
+            del args_dict["command"]
+        client.call_interactive("map.execute", {
+            "map_action": args.command,
+            **args_dict
+        })
     except Exception as e:
         logging.fatal(f"Error executing command '{args.command}': {e}")
         sys.exit(1)

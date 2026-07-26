@@ -1,0 +1,41 @@
+#!/bin/sh
+#
+# stegd        Startup script for StegOS Daemon
+#
+# chkconfig: - 90 10
+# description: stegOS Daemon for handling system packages and mappings
+# processname: stegd
+#
+
+DAEMON=/usr/bin/stegd
+NAME=stegd
+DESC="StegOS Daemon"
+PIDFILE=/var/run/$NAME.pid
+LOGFILE=/var/log/stegd.log
+
+case "$1" in
+  start)
+    echo -n "Starting $DESC: "
+    start-stop-daemon -S -b -m -p $PIDFILE -x $DAEMON -- --unix-socket /run/stegos/stegos.sock >> $LOGFILE 2>&1
+    echo "done."
+    ;;
+  stop)
+    echo -n "Stopping $DESC: "
+    start-stop-daemon -K -p $PIDFILE
+    echo "done."
+    ;;
+  restart|force-reload)
+    $0 stop
+    sleep 1
+    $0 start
+    ;;
+  status)
+    status $NAME
+    ;;
+  *)
+    echo "Usage: /etc/init.d/$NAME {start|stop|restart|force-reload|status}"
+    exit 1
+    ;;
+esac
+
+exit 0

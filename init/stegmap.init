@@ -1,0 +1,31 @@
+#!/bin/sh
+#
+# stegmap      Startup script to mount stegOS maps
+#
+# chkconfig: - 91 09
+# description: Mount mapped stegOS devices
+#
+
+case "$1" in
+  start)
+    echo -n "Mounting StegOS devices: "
+    /usr/bin/stegmap mount
+    echo "done."
+    ;;
+  stop)
+    echo -n "Unmounting StegOS devices: "
+    /usr/bin/stegmap unmount
+    echo "done."
+    ;;
+  restart|force-reload)
+    $0 stop
+    sleep 1
+    $0 start
+    ;;
+  *)
+    echo "Usage: /etc/init.d/stegmap {start|stop|restart|force-reload}"
+    exit 1
+    ;;
+esac
+
+exit 0

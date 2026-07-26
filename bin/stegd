@@ -1,0 +1,72 @@
+#!/usr/bin/env python3
+import argparse
+import json
+import logging
+import sys
+
+from steglib.server import StegServerApp
+from steglib.daemon_api import create_dispatcher
+
+app = StegServerApp()
+dispatcher = create_dispatcher()
+
+@app.on_stream()
+def handle_stream(rfile, wfile):
+    def send(msg):
+        wfile.write((json.dumps(msg) + "\n").encode("utf-8"))
+        wfile.flush()
+
+    line = rfile.readline()
+    if not line:
+        return
+    req = json.loads(line)
+    action = req.get("action")
+    args = req.get("args", {})
+    group = args.get("group")
+
+    def interactive_cb(message, choices=None, default=None, multiple=False):
+        send({"type": "prompt", "message": message, "choices": choices, "default": default, "multiple": multiple})
+        ans_line = rfile.readline()
+        if not ans_line:
+            return default
+        ans = json.loads(ans_line)
+        return ans.get("answer")
+
+    class StreamHandler(logging.Handler):
+        def emit(self, record):
+            try:
+                msg = self.format(record)
+                send({"type": "log", "message": msg})
+            except Exception:
+                self.handleError(record)
+
+    stream_handler = StreamHandler()
+    root_logger = logging.getLogger()
+    old_handlers = list(root_logger.handlers)
+    root_logger.handlers = [stream_handler]
+    root_logger.setLevel(logging.INFO if not args.get("verbose") else logging.DEBUG)
+
+    try:
+        dispatcher.dispatch(action, args, interactive_cb, send)
+        send({"type": "done", "result": "Success"})
+    except Exception as e:
+        send({"type": "error", "error": str(e)})
+    finally:
+        root_logger.handlers = old_handlers
+
+def main():
+    parser = argparse.ArgumentParser(description="StegOS Daemon")
+    parser.add_argument("--unix-socket", default="/run/stegos/stegos.sock", help="Path to the Unix socket to listen on")
+    parser.add_argument("--tcp-port", type=int, help="TCP port to listen on (optional)")
+    parser.add_argument("--tcp-host", default="0.0.0.0", help="TCP host")
+    args = parser.parse_args()
+
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
+
+    if args.tcp_port:
+        app.serve_tcp(args.tcp_host, args.tcp_port)
+    else:
+        app.serve_unix(args.unix)
+
+if __name__ == "__main__":
+    main()

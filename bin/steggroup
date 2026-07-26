@@ -9,13 +9,14 @@ import logging
 import sys
 
 from steglib.constants import VERSION
-from steglib.group_init import GroupInitializer
+from steglib.client import StegClient
 
 def main():
     """Main entry point for the steggroup utility."""
     parser = argparse.ArgumentParser(description="stegOS Group Initialization Utility")
     parser.add_argument("--version", action="version", version=f"stegOS steggroup v{VERSION}")
     parser.add_argument("-v", "--verbose", action="store_true", help="Enable verbose logging")
+    parser.add_argument("--daemon-url", help="URL of the stegd daemon (default: unix:///run/stegos/stegos.sock or STEGOS_DAEMON_URL)")
     
     subparsers = parser.add_subparsers(dest="command", required=True)
     
@@ -33,8 +34,6 @@ def main():
     logging.basicConfig(level=log_level, format="%(message)s")
     
     if args.command == "init":
-        initializer = GroupInitializer()
-        
         domain = args.domain
         timezone = args.timezone
         
@@ -44,27 +43,20 @@ def main():
             if not timezone:
                 timezone = input("Enter timezone [default: UTC]: ").strip() or "UTC"
                 
+        client = StegClient(url=args.daemon_url)
         try:
-            initializer.initialize(
-                device=args.device,
-                group_name=args.name,
-                domain=domain,
-                timezone=timezone,
-                force=args.force
-            )
+            client.call_interactive("group.init", {
+                "label": args.name,
+                "device": args.device,
+                "domain": domain,
+                "timezone": timezone,
+                "interactive": not args.non_interactive,
+                "force": args.force
+            })
             print("\nInitialization complete! You can now mount the group using:")
             print("  stegmap mount")
-        except PermissionError as e:
-            logging.error(f"Permission Error: {e}")
-            sys.exit(1)
-        except ValueError as e:
-            logging.error(f"Value Error: {e}")
-            sys.exit(1)
-        except RuntimeError as e:
-            logging.error(f"Runtime Error: {e}")
-            sys.exit(1)
         except Exception as e:
-            logging.error(f"Unexpected Error: {e}")
+            logging.error(f"Error: {e}")
             sys.exit(1)
 
 if __name__ == "__main__":

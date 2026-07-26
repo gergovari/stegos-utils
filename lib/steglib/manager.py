@@ -110,11 +110,10 @@ class PackageManager:
         for real_id in real_ids:
             logger.info("Stopping instance '%s'...", real_id)
             try:
-                subprocess.run(
-                    ["stegctl", "--group", self.engine.group_name, "stop", real_id],
-                    check=True,
-                )
-            except subprocess.CalledProcessError:
+                from steglib.lifecycle import LifecycleManager
+                lm = LifecycleManager(self.engine.group_name)
+                lm.execute("stop", real_id, False, False)
+            except Exception:
                 logger.warning("Failed to stop instance cleanly. Proceeding with removal...")
 
             instance_dir = os.path.join(self.engine.group_dir, real_id)
@@ -153,12 +152,11 @@ class PackageManager:
                     non_interactive=True, instance_id=instance_id,
                 )
                 logger.info("[%s] Ensuring instance is up to date...", instance_id)
-                subprocess.run(
-                    ["stegctl", "--group", self.engine.group_name, "start", instance_id, "--if-created"],
-                    check=True,
-                )
+                from steglib.lifecycle import LifecycleManager
+                lm = LifecycleManager(self.engine.group_name)
+                lm.execute("start", instance_id, True, False)
                 count += 1
-            except (PackageNotFoundError, subprocess.CalledProcessError, OSError) as exc:
+            except Exception as exc:
                 logger.warning("Could not upgrade '%s' (instance '%s'): %s", pkg_name, instance_id, exc)
         
         logger.info("Upgraded %d instance(s) in group '%s'.", count, self.engine.group_name)
@@ -306,9 +304,8 @@ class PackageManager:
                         non_interactive=True, instance_id=dep_id,
                     )
                     logger.info("[%s] Restarting...", dep_id)
-                    subprocess.run(
-                        ["stegctl", "--group", self.engine.group_name, "start", dep_id],
-                        check=True,
-                    )
-                except (PackageNotFoundError, subprocess.CalledProcessError):
+                    from steglib.lifecycle import LifecycleManager
+                    lm = LifecycleManager(self.engine.group_name)
+                    lm.execute("start", dep_id, False, False)
+                except Exception:
                     logger.warning("Failed to reconfigure '%s'.", dep_id)

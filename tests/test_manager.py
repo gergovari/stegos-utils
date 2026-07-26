@@ -83,10 +83,10 @@ def test_reconfigure(mock_instance, mock_isdir, mock_listdir):
     
     engine_mock.process_package.assert_called_once()
 
-@patch("steglib.manager.subprocess.run")
+@patch("steglib.lifecycle.LifecycleManager")
 @patch("steglib.manager.os.path.exists", return_value=True)
 @patch("steglib.manager.os.remove")
-def test_remove(mock_remove, mock_exists, mock_run):
+def test_remove(mock_remove, mock_exists, mock_lm):
     engine_mock = Mock()
     engine_mock.group_name = "default"
     engine_mock.group_dir = "/group"
@@ -96,16 +96,16 @@ def test_remove(mock_remove, mock_exists, mock_run):
     manager._find_dependents = Mock(return_value={})
     
     manager.remove(["inst1"])
-    mock_run.assert_called_once()
+    mock_lm.return_value.execute.assert_called_once_with("stop", "inst1", False, False)
     mock_remove.assert_has_calls([
         call("/group/inst1/backend/.stegpkg-state.json"),
         call("/group/inst1/backend/docker-compose.yml")
     ], any_order=True)
 
-@patch("steglib.manager.subprocess.run")
+@patch("steglib.lifecycle.LifecycleManager")
 @patch("steglib.manager.os.path.exists", return_value=True)
 @patch("steglib.manager.shutil.rmtree")
-def test_remove_purge(mock_rmtree, mock_exists, mock_run):
+def test_remove_purge(mock_rmtree, mock_exists, mock_lm):
     engine_mock = Mock()
     engine_mock.group_name = "default"
     engine_mock.group_dir = "/group"
@@ -120,8 +120,8 @@ def test_remove_purge(mock_rmtree, mock_exists, mock_run):
 @patch("steglib.manager.os.listdir")
 @patch("steglib.manager.os.path.isdir", return_value=True)
 @patch("steglib.manager.Instance")
-@patch("steglib.manager.subprocess.run")
-def test_upgrade(mock_run, mock_instance, mock_isdir, mock_listdir):
+@patch("steglib.lifecycle.LifecycleManager")
+def test_upgrade(mock_lm, mock_instance, mock_isdir, mock_listdir):
     engine_mock = Mock()
     engine_mock.group_name = "default"
     engine_mock.group_dir = "/group"
@@ -136,7 +136,7 @@ def test_upgrade(mock_run, mock_instance, mock_isdir, mock_listdir):
     manager.upgrade()
     
     engine_mock.process_package.assert_called_once()
-    mock_run.assert_called_once()
+    mock_lm.return_value.execute.assert_called_once_with("start", "inst1", True, False)
 
 @patch("steglib.manager.os.listdir", return_value=["repo1"])
 @patch("steglib.manager.os.path.isdir", return_value=True)
@@ -184,8 +184,8 @@ def test_find_dependents(mock_instance, mock_isdir, mock_listdir):
     assert deps == {"inst1": ["inst2"]}
 
 @patch("steglib.manager.Instance")
-@patch("steglib.manager.subprocess.run")
-def test_cascade_remove(mock_run, mock_instance):
+@patch("steglib.lifecycle.LifecycleManager")
+def test_cascade_remove(mock_lm, mock_instance):
     engine_mock = Mock()
     engine_mock.group_name = "default"
     engine_mock.find_package_dir.return_value = "/pkg"
@@ -201,4 +201,4 @@ def test_cascade_remove(mock_run, mock_instance):
     
     mock_inst_obj.write_conf.assert_called_once_with({"enabled_capabilities": {"cap1": ["inst3"]}})
     engine_mock.process_package.assert_called_once()
-    mock_run.assert_called_once()
+    mock_lm.return_value.execute.assert_called_once_with("start", "inst2", False, False)

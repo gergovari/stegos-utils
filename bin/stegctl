@@ -9,13 +9,14 @@ import logging
 import sys
 
 from steglib.constants import VERSION
-from steglib.lifecycle import LifecycleManager, MultipleInstancesError
+from steglib.client import StegClient
 
 def main():
     """Main entry point for stegctl."""
     parser = argparse.ArgumentParser(description="stegOS Runtime Orchestrator")
     parser.add_argument('--version', action='version', version=f'stegctl {VERSION}')
     parser.add_argument("-v", "--verbose", action="store_true", help="Enable verbose output")
+    parser.add_argument("--daemon-url", help="URL of the stegd daemon (default: unix:///run/stegos/stegos.sock or STEGOS_DAEMON_URL)")
     
     subparsers = parser.add_subparsers(dest="action", required=True, help="Action to perform")
     
@@ -31,49 +32,17 @@ def main():
     log_level = logging.DEBUG if args.verbose else logging.INFO
     logging.basicConfig(level=log_level, format="%(message)s")
     
+    client = StegClient(url=args.daemon_url)
     try:
-        manager = LifecycleManager(args.group)
+        client.call_interactive("ctl.execute", {
+            "ctl_action": args.action,
+            "package": args.package,
+            "group": args.group,
+            "if_created": args.if_created,
+            "verbose": args.verbose
+        })
     except Exception as e:
-        logging.error(f"Initialization error: {e}")
-        sys.exit(1)
-        
-    def do_execute(package_name):
-        try:
-            if args.action == "restart":
-                manager.execute("stop", package_name, args.if_created, args.verbose)
-                manager.execute("start", package_name, args.if_created, args.verbose)
-            else:
-                manager.execute(args.action, package_name, args.if_created, args.verbose)
-            return True
-        except MultipleInstancesError as e:
-            if not sys.stdin.isatty():
-                logging.error(f"Multiple instances match '{package_name}': {', '.join(e.instances)}")
-                return False
-                
-            print(f"Multiple instances match '{package_name}':")
-            print("  0. All instances")
-            for idx, inst in enumerate(e.instances, 1):
-                print(f"  {idx}. {inst}")
-            while True:
-                choice = input(f"Select target [0-{len(e.instances)}]: ").strip()
-                if choice == "0":
-                    for inst in e.instances:
-                        do_execute(inst)
-                    return True
-                elif choice.isdigit() and 1 <= int(choice) <= len(e.instances):
-                    target_inst = e.instances[int(choice) - 1]
-                    do_execute(target_inst)
-                    return True
-                print("Invalid selection. Try again.")
-        except RuntimeError as e:
-            logging.error(f"Runtime Error: {e}")
-            return False
-        except ValueError as e:
-            logging.error(f"Value Error: {e}")
-            return False
-
-    success = do_execute(args.package)
-    if not success:
+        logging.error(f"Error: {e}")
         sys.exit(1)
 
 if __name__ == "__main__":

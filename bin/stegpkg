@@ -9,47 +9,14 @@ import logging
 import sys
 
 from steglib.constants import VERSION
-from steglib.engine import PackageEngine
-from steglib.manager import PackageManager
-
-def cli_interactive_cb(message, choices=None, default=None, multiple=False):
-    """Simple CLI callback for interactive prompts."""
-    if multiple:
-        # Expected comma separated choices
-        default_str = default if default else ""
-        print(f"\n{message}")
-        ans = input(f"Select choices (comma-separated, or empty to skip) [default: {default_str}]: ").strip()
-        if not ans and default_str:
-            ans = default_str
-        if ans:
-            return [x.strip() for x in ans.split(",") if x.strip()]
-        return []
-    
-    if choices:
-        print(f"\n{message}")
-        for i, choice in enumerate(choices, 1):
-            print(f"  {i}. {choice}")
-        default_str = f" [default: {default}]" if default else ""
-        while True:
-            ans = input(f"Select [1-{len(choices)}]{default_str}: ").strip()
-            if not ans and default:
-                return default
-            if ans.isdigit() and 1 <= int(ans) <= len(choices):
-                return choices[int(ans) - 1]
-            # check if they typed the choice itself
-            if ans in choices:
-                return ans
-            print("Invalid selection. Try again.")
-    else:
-        default_str = f" [default: {default}]" if default else ""
-        ans = input(f"{message}{default_str}: ").strip()
-        return ans if ans else default
+from steglib.client import StegClient
 
 def main():
     """Main entry point for stegpkg."""
     parser = argparse.ArgumentParser(description="stegOS Package Manager")
     parser.add_argument("--version", action="version", version=f"stegpkg {VERSION}")
     parser.add_argument("-v", "--verbose", action="store_true", help="Enable verbose logging")
+    parser.add_argument("--daemon-url", help="URL of the stegd daemon (default: unix:///run/stegos/stegos.sock or STEGOS_DAEMON_URL)")
     
     subparsers = parser.add_subparsers(dest="command", required=True)
 
@@ -97,31 +64,13 @@ def main():
     
     log_level = logging.DEBUG if args.verbose else logging.INFO
     logging.basicConfig(level=log_level, format="%(message)s")
-    
+    client = StegClient(url=args.daemon_url)
     try:
-        engine = PackageEngine(args.group)
-        manager = PackageManager(engine)
-        
-        interactive_cb = cli_interactive_cb if sys.stdin.isatty() else None
-
-        if args.command == "install":
-            manager.install(
-                args.packages, args.repo, args.config, args.reconfigure,
-                args.non_interactive, args.id, interactive_cb
-            )
-        elif args.command == "reconfigure":
-            manager.reconfigure(args.instance_ids, interactive_cb)
-        elif args.command == "remove":
-            manager.remove(args.instance_ids, args.purge, args.cascade, interactive_cb)
-        elif args.command == "upgrade":
-            manager.upgrade(args.instance_ids, interactive_cb)
-        elif args.command == "update":
-            manager.update()
-        elif args.command == "list":
-            manager.list_packages()
-        elif args.command == "clean":
-            manager.clean(args.yes, interactive_cb)
+        args_dict = vars(args).copy()
+        if "command" in args_dict:
+            del args_dict["command"]
             
+        client.call_interactive(f"pkg.{args.command}", args_dict)
     except Exception as e:
         logging.error(f"Error: {e}")
         sys.exit(1)
