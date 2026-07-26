@@ -18,6 +18,10 @@ class StegRequestHandler(http.server.BaseHTTPRequestHandler):
             return self.client_address
         return super().address_string()
         
+    def log_message(self, format, *args):
+        # Suppress default HTTP access logging
+        pass
+        
     def do_GET(self):
         self.server.app.handle_request("GET", self)
 

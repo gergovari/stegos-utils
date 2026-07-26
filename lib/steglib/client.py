@@ -64,6 +64,8 @@ class StegClient:
                 raise RuntimeError(f"API Error: {err_data.get('error', e.reason)}")
             except json.JSONDecodeError:
                 raise RuntimeError(f"API Error: {e.reason} - {body.decode('utf-8')}")
+        except (FileNotFoundError, ConnectionRefusedError):
+            raise RuntimeError(f"Could not connect to daemon at {self.url}. Is stegd running?")
         except Exception as e:
             raise RuntimeError(f"Connection Error: {e}")
 
@@ -81,7 +83,11 @@ class StegClient:
             parsed = urllib.parse.urlparse(self.url)
             conn = http.client.HTTPConnection(parsed.netloc)
             
-        conn.connect()
+        try:
+            conn.connect()
+        except (FileNotFoundError, ConnectionRefusedError):
+            raise RuntimeError(f"Could not connect to daemon at {self.url}. Is stegd running?")
+            
         conn.request("POST", "/stream", headers={"Upgrade": "stegos-stream", "Connection": "Upgrade"})
         resp = conn.getresponse()
         if resp.status != 101:
