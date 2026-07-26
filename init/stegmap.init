@@ -10,12 +10,19 @@
 
 case "$1" in
   start)
-    echo -n "Mounting StegOS devices: "
+    echo -n "Mounting stegOS devices: "
+    # Wait for the stegd socket to be ready
+    for i in 1 2 3 4 5; do
+        if [ -S /run/stegos/stegos.sock ]; then
+            break
+        fi
+        sleep 1
+    done
     /usr/bin/stegmap mount
     echo "done."
     ;;
   stop)
-    echo -n "Unmounting StegOS devices: "
+    echo -n "Unmounting stegOS devices: "
     /usr/bin/stegmap unmount
     echo "done."
     ;;
