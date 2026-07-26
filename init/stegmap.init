@@ -1,10 +1,12 @@
 #!/bin/sh
-#
-# stegmap      Startup script to mount stegOS maps
-#
-# chkconfig: - 91 09
-# description: Mount mapped stegOS devices
-#
+### BEGIN INIT INFO
+# Provides:          stegmap
+# Required-Start:    $syslog $local_fs stegd
+# Required-Stop:     $syslog $local_fs stegd
+# Default-Start:     2 3 4 5
+# Default-Stop:      0 1 6
+# Short-Description: Mount mapped stegOS devices
+### END INIT INFO
 
 case "$1" in
   start)
