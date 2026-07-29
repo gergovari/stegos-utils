@@ -101,13 +101,17 @@ class DockerComposeBackend(BackendBase):
                                     break
                         elif isinstance(data, dict):
                             total_bytes += sum(l.get("Size", l.get("size", 0)) for l in data.get("SchemaV2Manifest", {}).get("layers", []))
-                    except json.JSONDecodeError:
-                        pass
+                    except json.JSONDecodeError as e:
+                        logger.error(f"Failed to parse manifest JSON for {image}: {e}")
+                else:
+                    logger.error(f"docker manifest inspect failed for {image}: {m_res.stderr}")
             
             if total_bytes > 0:
                 return f"{total_bytes / (1024 * 1024):.2f} MB"
-        except Exception:
-            pass
+            else:
+                logger.error("total_bytes was 0 after parsing manifests")
+        except Exception as e:
+            logger.error(f"_get_needed_download_size exception: {e}")
         return None
 
     def _sync_docker_cache(self, compose_file, action):
