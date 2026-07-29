@@ -97,25 +97,24 @@ class DockerComposeBackend(BackendBase):
                     try:
                         data = json.loads(m_res.stdout)
                         
-                        def extract_layers_size(obj):
-                            if "layers" in obj:
-                                return sum(l.get("Size", l.get("size", 0)) for l in obj["layers"]), True
-                            for v in obj.values():
-                                if isinstance(v, dict) and "layers" in v:
-                                    return sum(l.get("Size", l.get("size", 0)) for l in v["layers"]), True
-                            return 0, False
+                        def get_any_layers_size(obj):
+                            if isinstance(obj, dict):
+                                if "layers" in obj and isinstance(obj["layers"], list):
+                                    size = sum(l.get("Size", l.get("size", 0)) for l in obj["layers"])
+                                    if size > 0:
+                                        return size
+                                for v in obj.values():
+                                    size = get_any_layers_size(v)
+                                    if size > 0:
+                                        return size
+                            elif isinstance(obj, list):
+                                for item in obj:
+                                    size = get_any_layers_size(item)
+                                    if size > 0:
+                                        return size
+                            return 0
 
-                        if isinstance(data, list):
-                            for m in data:
-                                if m.get("Platform", {}).get("architecture") in ("amd64", "arm64"):
-                                    size, found = extract_layers_size(m)
-                                    if found:
-                                        total_bytes += size
-                                        break
-                        elif isinstance(data, dict):
-                            size, found = extract_layers_size(data)
-                            if found:
-                                total_bytes += size
+                        total_bytes += get_any_layers_size(data)
                     except json.JSONDecodeError as e:
                         logger.error(f"Failed to parse manifest JSON for {image}: {e}")
                 else:
