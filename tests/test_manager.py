@@ -6,9 +6,12 @@ from unittest.mock import Mock, patch, mock_open, call
 from steglib.manager import PackageManager
 from steglib.engine import PackageNotFoundError
 
-def test_manager_install(mocker):
+@patch("steglib.engine.load_manifest")
+def test_manager_install(mock_load_manifest, mocker):
+    mock_load_manifest.return_value = {"name": "mypkg"}
     engine_mock = Mock()
     engine_mock.find_package_dir.return_value = "/path/to/pkg"
+    engine_mock._resolve_instance_name.return_value = "mypkg-1234"
     engine_mock.process_package.return_value = "mypkg-1234"
     
     manager = PackageManager(engine_mock)
@@ -17,9 +20,12 @@ def test_manager_install(mocker):
     engine_mock.find_package_dir.assert_called_once_with("mypkg", None)
     engine_mock.process_package.assert_called_once()
 
-def test_manager_install_with_config(mocker):
+@patch("steglib.engine.load_manifest")
+def test_manager_install_with_config(mock_load_manifest, mocker):
+    mock_load_manifest.return_value = {"name": "mypkg"}
     engine_mock = Mock()
     engine_mock.find_package_dir.return_value = "/path/to/pkg"
+    engine_mock._resolve_instance_name.return_value = "mypkg-1234"
     engine_mock.process_package.return_value = "mypkg-1234"
     
     manager = PackageManager(engine_mock)
@@ -28,6 +34,39 @@ def test_manager_install_with_config(mocker):
     
     engine_mock.process_package.assert_called_once()
     assert engine_mock.process_package.call_args[0][1] == {"a": 1}
+
+@patch("steglib.engine.load_manifest")
+def test_manager_install_pre_registers_capabilities(mock_load_manifest, mocker):
+    def fake_load_manifest(pkg_dir):
+        if "whoami" in pkg_dir:
+            return {"name": "whoami"}
+        if "nginx-proxy" in pkg_dir:
+            return {
+                "name": "nginx-proxy",
+                "capabilities": {
+                    "provides": [{"name": "reverse-proxy"}]
+                }
+            }
+        return {"name": "other"}
+    
+    mock_load_manifest.side_effect = fake_load_manifest
+    
+    engine_mock = Mock()
+    engine_mock.find_package_dir.side_effect = lambda pkg, repo: f"/path/to/{pkg}"
+    engine_mock._resolve_instance_name.side_effect = lambda pkg, *args: f"{pkg}-123"
+    
+    manager = PackageManager(engine_mock)
+    manager.install(["whoami", "nginx-proxy"])
+    
+    # Assert register was called for reverse-proxy from nginx-proxy-123
+    engine_mock.cap_manager.register.assert_called_once_with("reverse-proxy", "nginx-proxy-123", {})
+    
+    # Verify the order of calls
+    calls = engine_mock.mock_calls
+    register_idx = next(i for i, c in enumerate(calls) if "register" in c[0])
+    process_whoami_idx = next(i for i, c in enumerate(calls) if "process_package" in c[0] and c[1][4] == "whoami-123")
+    
+    assert register_idx < process_whoami_idx, "Capabilities must be registered before packages are processed"
 
 def test_manager_install_invalid_name():
     manager = PackageManager(Mock())

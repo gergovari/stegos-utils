@@ -29,7 +29,10 @@ class PackageManager:
         if instance_id and len(packages) > 1:
             raise ValueError("--id cannot be used when installing multiple packages.")
 
+        from steglib.engine import load_manifest
+        
         seen = []
+        plan = []
         for pkg in packages:
             if not re.match(r"^[a-zA-Z0-9.\-_]+$", pkg):
                 raise ValueError(f"Invalid package name '{pkg}'. Must be alphanumeric, dots, dashes, or underscores.")
@@ -38,15 +41,35 @@ class PackageManager:
             seen.append(pkg)
 
             pkg_dir = self.engine.find_package_dir(pkg, repo)
+            manifest = load_manifest(pkg_dir)
+            if not manifest:
+                raise ValueError(f"Failed to load manifest from '{pkg_dir}'.")
+                
+            pkg_name = manifest.get("name")
+            is_singleton = manifest.get("singleton", False)
+            existing = self.engine._find_instances_by_package(pkg_name)
+            
+            resolved_id = self.engine._resolve_instance_name(
+                pkg_name, instance_id, reconfigure, is_singleton, existing, interactive_cb
+            )
+            
+            for cap in manifest.get("capabilities", {}).get("provides", []):
+                cap_name = cap.get("name")
+                if cap_name:
+                    self.engine.cap_manager.register(cap_name, resolved_id, cap.get("injectors", {}))
+                    
+            plan.append((pkg, pkg_dir, resolved_id))
+
+        for pkg, pkg_dir, resolved_id in plan:
             cli_conf = {}
             if config_file:
                 with open(config_file, "r") as fh:
                     cli_conf = json.load(fh)
             
             inst_id = self.engine.process_package(
-                pkg_dir, cli_conf, reconfigure, non_interactive, instance_id, interactive_cb
+                pkg_dir, cli_conf, reconfigure, non_interactive, resolved_id, interactive_cb
             )
-            display_name = inst_id if inst_id else (instance_id if instance_id else pkg)
+            display_name = inst_id if inst_id else (resolved_id if resolved_id else pkg)
             logger.info("Successfully installed %s as %s!", pkg, display_name)
 
     def reconfigure(self, instance_ids=None, interactive_cb=None):
