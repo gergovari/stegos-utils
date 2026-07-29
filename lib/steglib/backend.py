@@ -92,7 +92,7 @@ class DockerComposeBackend(BackendBase):
             
             for image in images:
                 # 2. Get manifest
-                m_res = run_cmd(["docker", "manifest", "inspect", "-v", image], logger, env=env, capture_output=True, text=True, check=False)
+                m_res = run_cmd(["docker", "manifest", "inspect", "-v", image], logger, env=env, capture_output=True, text=True, check=False, quiet_fail=True)
                 if m_res.returncode == 0:
                     try:
                         data = json.loads(m_res.stdout)
@@ -162,7 +162,7 @@ class DockerComposeBackend(BackendBase):
                 safe_name = hashlib.md5(image.encode()).hexdigest() + ".tar"
                 cache_path = os.path.join(cache_dir, safe_name)
                 if os.path.isfile(cache_path):
-                    check = run_cmd(["docker", "image", "inspect", image], logger=logger, check=False)
+                    check = run_cmd(["docker", "image", "inspect", image], logger=logger, check=False, quiet_fail=True)
                     if check.returncode != 0:
                         print(f"Loading cached image '{image}' from group cache...")
                         run_cmd(["docker", "load", "-i", cache_path], logger=logger, error_msg=f"Failed to load image from cache: {cache_path}", check=True)
@@ -187,7 +187,7 @@ class DockerComposeBackend(BackendBase):
                 # Check if the service has any containers; if not, skip starting
                 check_cmd = cmd + ["ps", "-q", "-a"]
                 try:
-                    result = run_cmd(check_cmd, logger=logger, check=True)
+                    result = run_cmd(check_cmd, logger=logger, check=True, quiet_fail=True)
                     if not result.stdout.strip():
                         return
                 except Exception:
@@ -206,7 +206,7 @@ class DockerComposeBackend(BackendBase):
             # Check if the service has any containers; if not, skip stopping
             check_cmd = cmd + ["ps", "-q", "-a"]
             try:
-                result = run_cmd(check_cmd, logger=logger, check=True)
+                result = run_cmd(check_cmd, logger=logger, check=True, quiet_fail=True)
                 if not result.stdout.strip():
                     # No containers exist, nothing to stop
                     return

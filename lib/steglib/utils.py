@@ -1,10 +1,10 @@
 import subprocess
 import logging
 
-def run_cmd(cmd, logger, error_msg=None, **kwargs):
+def run_cmd(cmd, logger, error_msg=None, quiet_fail=False, **kwargs):
     """
     Executes a shell command. Automatically captures output.
-    If the command fails (non-zero exit code), it logs the stderr/stdout via logger.debug.
+    If the command fails (non-zero exit code), it logs the stderr/stdout via logger.debug unless quiet_fail is True.
     """
     # Force capture output and text decoding
     kwargs["capture_output"] = True
@@ -20,11 +20,11 @@ def run_cmd(cmd, logger, error_msg=None, **kwargs):
         if error_msg:
             logger.debug(error_msg)
             
-        err_out = result.stderr.strip() if result.stderr else ""
-        std_out = result.stdout.strip() if result.stdout else ""
-        details = err_out or std_out or "No output."
-        
-        logger.debug("Command failed: %s\nDetails:\n%s", " ".join(cmd), details)
+        if not quiet_fail:
+            err_out = result.stderr.strip() if result.stderr else ""
+            std_out = result.stdout.strip() if result.stdout else ""
+            details = err_out or std_out or "No output."
+            logger.debug("Command failed: %s\nDetails:\n%s", " ".join(cmd), details)
         
         if check:
             # Raise the exception like check=True would
