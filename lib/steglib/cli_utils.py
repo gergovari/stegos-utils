@@ -113,6 +113,10 @@ def setup_cli(description, version_str):
     return parser, parent_parser, formatter_class
 
 def init_cli_client(args):
+    # Hack to fix argparse subparser overwriting the global verbose flag
+    if "-v" in sys.argv or "--verbose" in sys.argv:
+        args.verbose = True
+        
     log_level = logging.DEBUG if args.verbose else logging.INFO
     logging.basicConfig(level=log_level, format="%(message)s")
     client = StegClient(url=args.daemon_url)
