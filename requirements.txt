@@ -1,2 +1,5 @@
+PyYAML
+Jinja2
+jsonschema
 rich>=13.0.0
 questionary>=2.0.0
