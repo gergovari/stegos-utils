@@ -1,0 +1,98 @@
+import os
+import subprocess
+import time
+import hashlib
+import logging
+
+logger = logging.getLogger(__name__)
+
+def _get_network_params(group_dir: str) -> list:
+    """Generate unique deterministic networking parameters for this group's dockerd."""
+    group_name = os.path.basename(group_dir)
+    h = int(hashlib.sha256(group_name.encode()).hexdigest(), 16)
+    x = (h % 254) + 1
+    
+    bip = f"10.{x}.0.1/24"
+    pool_base = f"10.{x}.0.0/16"
+    
+    return [
+        f"--bip={bip}",
+        f"--default-address-pool=base={pool_base},size=24"
+    ]
+
+def get_docker_env(group_dir: str) -> dict:
+    """Returns the environment variables required to interact with this group's dockerd."""
+    backend_dir = os.path.join(group_dir, "backend", "dockerd")
+    sock_file = os.path.join(backend_dir, "docker.sock")
+    
+    env = os.environ.copy()
+    env["DOCKER_HOST"] = f"unix://{sock_file}"
+    return env
+
+def ensure_running(group_dir: str) -> dict:
+    """Ensures the isolated docker daemon for this group is running.
+    Returns the environment dict with DOCKER_HOST set.
+    """
+    backend_dir = os.path.join(group_dir, "backend", "dockerd")
+    data_root = os.path.join(backend_dir, "data")
+    exec_root = os.path.join(backend_dir, "exec")
+    sock_file = os.path.join(backend_dir, "docker.sock")
+    pid_file = os.path.join(backend_dir, "docker.pid")
+    log_file = os.path.join(backend_dir, "dockerd.log")
+    
+    os.makedirs(data_root, exist_ok=True)
+    os.makedirs(exec_root, exist_ok=True)
+    
+    env = get_docker_env(group_dir)
+    
+    # 1. Check if it's already responding
+    res = subprocess.run(["docker", "info"], env=env, capture_output=True)
+    if res.returncode == 0:
+        return env
+        
+    # 2. If we reach here, daemon is not responding. 
+    # Clean up stale pid/sock files just in case.
+    if os.path.exists(pid_file):
+        try:
+            with open(pid_file, 'r') as f:
+                pid = int(f.read().strip())
+            os.kill(pid, 9)
+        except Exception:
+            pass
+        try:
+            os.remove(pid_file)
+        except OSError:
+            pass
+            
+    if os.path.exists(sock_file):
+        try:
+            os.remove(sock_file)
+        except OSError:
+            pass
+            
+    # 3. Start the isolated daemon
+    logger.info(f"Starting isolated Docker daemon for group: {os.path.basename(group_dir)}")
+    
+    cmd = [
+        "dockerd",
+        "--data-root", data_root,
+        "--exec-root", exec_root,
+        "--pidfile", pid_file,
+        "--host", f"unix://{sock_file}",
+        "--iptables=true"
+    ]
+    cmd.extend(_get_network_params(group_dir))
+    
+    with open(log_file, "a") as f:
+        subprocess.Popen(cmd, stdout=f, stderr=f, env=os.environ, preexec_fn=os.setsid)
+        
+    # 5. Wait for it to become responsive
+    timeout = 15
+    for _ in range(timeout):
+        time.sleep(1)
+        res = subprocess.run(["docker", "info"], env=env, capture_output=True)
+        if res.returncode == 0:
+            return env
+            
+    logger.error(f"Failed to start isolated Docker daemon. Check logs at {log_file}")
+    raise RuntimeError(f"Isolated Docker daemon failed to start for {group_dir}")

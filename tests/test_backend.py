@@ -4,6 +4,11 @@ from unittest.mock import patch, mock_open, MagicMock, call
 import subprocess
 
 from steglib.backend import BackendBase, DockerComposeBackend, BACKENDS
+from unittest.mock import Mock
+import steglib.backend
+steglib.backend.ensure_running = Mock(return_value={"DOCKER_HOST": "unix://fake"})
+steglib.backend.get_docker_env = Mock(return_value={"DOCKER_HOST": "unix://fake"})
+
 from steglib.exceptions import BackendError, InsufficientSpaceError, PortConflictError, NetworkNotFoundError
 
 def test_backend_base_init():

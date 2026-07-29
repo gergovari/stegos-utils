@@ -13,6 +13,7 @@ logger = logging.getLogger(__name__)
 
 import json
 from .constants import DOCKER_CACHE_DIR
+from .dockerd import ensure_running, get_docker_env
 
 class BackendBase:
     """Abstract base class for runtime backends."""
@@ -87,7 +88,12 @@ class DockerComposeBackend(BackendBase):
             logger.info("  └── ⚠️  Disk space exhausted. ⏳ Calculating estimated download size (Press Ctrl+C to skip)...")
                 
             total_bytes = 0
-            env = dict(os.environ)
+            try:
+                env = ensure_running(self.group_dir)
+            except Exception as e:
+                logger.error(f"Failed to ensure isolated dockerd is running: {e}")
+                env = dict(os.environ)
+                
             env["DOCKER_CLI_EXPERIMENTAL"] = "enabled"
             
             for image in images:
@@ -157,22 +163,24 @@ class DockerComposeBackend(BackendBase):
         cache_dir = os.path.join(self.group_dir, DOCKER_CACHE_DIR)
         os.makedirs(cache_dir, exist_ok=True)
         
+        env = get_docker_env(self.group_dir)
+        
         if action == "pre-start":
             for image in images:
                 safe_name = hashlib.md5(image.encode()).hexdigest() + ".tar"
                 cache_path = os.path.join(cache_dir, safe_name)
                 if os.path.isfile(cache_path):
-                    check = run_cmd(["docker", "image", "inspect", image], logger=logger, check=False, quiet_fail=True)
+                    check = run_cmd(["docker", "image", "inspect", image], env=env, logger=logger, check=False, quiet_fail=True)
                     if check.returncode != 0:
                         print(f"Loading cached image '{image}' from group cache...")
-                        run_cmd(["docker", "load", "-i", cache_path], logger=logger, error_msg=f"Failed to load image from cache: {cache_path}", check=True)
+                        run_cmd(["docker", "load", "-i", cache_path], env=env, logger=logger, error_msg=f"Failed to load image from cache: {cache_path}", check=True)
         elif action == "post-start":
             for image in images:
                 safe_name = hashlib.md5(image.encode()).hexdigest() + ".tar"
                 cache_path = os.path.join(cache_dir, safe_name)
                 if not os.path.isfile(cache_path):
                     print(f"Caching image '{image}' to group cache...")
-                    run_cmd(["docker", "save", "-o", cache_path, image], logger=logger, error_msg=f"Failed to save image {image} to cache", check=True)
+                    run_cmd(["docker", "save", "-o", cache_path, image], env=env, logger=logger, error_msg=f"Failed to save image {image} to cache", check=True)
                     
     def execute(self, action, if_created=False, follow=False):
         """Execute a docker-compose command (e.g. start, stop, restart, logs, down)."""
@@ -180,7 +188,13 @@ class DockerComposeBackend(BackendBase):
         if not os.path.isfile(compose_file):
             logger.error(f"[{self.pkg}] Missing docker-compose.yml in {self.pkg_path}")
             return
-        
+        # Ensure isolated daemon is running
+        try:
+            env = ensure_running(self.group_dir)
+        except Exception as e:
+            logger.error(f"[{self.pkg}] {e}")
+            return
+            
         cmd = ["docker", "compose", "-p", self.pkg, "-f", compose_file]
         if action == "start":
             if if_created:
@@ -226,14 +240,14 @@ class DockerComposeBackend(BackendBase):
         try:
             if action == "start":
                 logger.info(f"[{self.pkg}] Starting package...")
-                run_cmd(cmd, logger=logger, error_msg="Docker command failed.", check=True)
+                run_cmd(cmd, env=env, logger=logger, error_msg="Docker command failed.", check=True)
                 self._sync_docker_cache(compose_file, "post-start")
             elif action == "stop":
                 logger.info(f"[{self.pkg}] Stopping package...")
-                run_cmd(cmd, logger=logger, error_msg="Docker command failed.", check=True)
+                run_cmd(cmd, env=env, logger=logger, error_msg="Docker command failed.", check=True)
             elif action == "status":
-                all_ctrs = run_cmd(cmd + ["ps", "-q", "-a"], logger=logger, check=False).stdout.splitlines()
-                running_ctrs = run_cmd(cmd + ["ps", "-q", "--status=running"], logger=logger, check=False).stdout.splitlines()
+                all_ctrs = run_cmd(cmd + ["ps", "-q", "-a"], env=env, logger=logger, check=False).stdout.splitlines()
+                running_ctrs = run_cmd(cmd + ["ps", "-q", "--status=running"], env=env, logger=logger, check=False).stdout.splitlines()
                 total = len(all_ctrs)
                 running = len(running_ctrs)
                 
@@ -250,14 +264,14 @@ class DockerComposeBackend(BackendBase):
             else:
                 # For logs, we must capture the output so the daemon sends it to the client
                 if action == "logs" and follow:
-                    process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+                    process = subprocess.Popen(cmd, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
                     for line in iter(process.stdout.readline, ''):
                         logger.info(line.rstrip('\n'))
                     process.wait()
                     if process.returncode != 0:
                         logger.error(f"[{self.pkg}] Logs command exited with {process.returncode}")
                 else:
-                    res = run_cmd(cmd, logger=logger, capture_output=True, text=True, check=True)
+                    res = run_cmd(cmd, env=env, logger=logger, capture_output=True, text=True, check=True)
                     if res.stdout:
                         logger.info(res.stdout.strip())
                     if res.stderr:
