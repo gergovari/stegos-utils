@@ -22,13 +22,14 @@ class MultipleInstancesError(Exception):
 class LifecycleManager:
     """Manages the lifecycle (start, stop, etc.) of stegOS packages within a group."""
 
-    def __init__(self, group_prefix=None):
+    def __init__(self, group_prefix=None, interactive_cb=None):
         """Initialize the LifecycleManager with a specific group.
 
         Args:
             group_prefix (str, optional): The group prefix to resolve.
+            interactive_cb: Optional callback for interactive prompts.
         """
-        self.group_name = GroupManager.resolve(group_prefix)
+        self.group_name = GroupManager.resolve(group_prefix, interactive_cb)
         self.cont_dir = os.path.join(PERSISTENT_DIR, self.group_name)
 
     def execute(self, action, package_name=None, if_created=False, verbose=False):

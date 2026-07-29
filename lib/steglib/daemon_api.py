@@ -23,7 +23,7 @@ class ActionDispatcher:
 
 class PackageController:
     def install(self, args, interactive_cb, send):
-        manager = PackageManager(PackageEngine(args.get("group")))
+        manager = PackageManager(PackageEngine(args.get("group"), interactive_cb))
         manager.install(
             args.get("packages", []), args.get("repo"), args.get("config"),
             args.get("reconfigure", False), args.get("non_interactive", False),
@@ -31,27 +31,27 @@ class PackageController:
         )
 
     def reconfigure(self, args, interactive_cb, send):
-        manager = PackageManager(PackageEngine(args.get("group")))
+        manager = PackageManager(PackageEngine(args.get("group"), interactive_cb))
         manager.reconfigure(args.get("instance_ids", []), interactive_cb)
 
     def remove(self, args, interactive_cb, send):
-        manager = PackageManager(PackageEngine(args.get("group")))
+        manager = PackageManager(PackageEngine(args.get("group"), interactive_cb))
         manager.remove(args.get("instance_ids", []), args.get("purge", False), args.get("cascade", False), interactive_cb)
 
     def upgrade(self, args, interactive_cb, send):
-        manager = PackageManager(PackageEngine(args.get("group")))
+        manager = PackageManager(PackageEngine(args.get("group"), interactive_cb))
         manager.upgrade(args.get("instance_ids", []), interactive_cb)
 
     def update(self, args, interactive_cb, send):
-        manager = PackageManager(PackageEngine(args.get("group")))
+        manager = PackageManager(PackageEngine(args.get("group"), interactive_cb))
         manager.update()
 
     def list(self, args, interactive_cb, send):
-        manager = PackageManager(PackageEngine(args.get("group")))
+        manager = PackageManager(PackageEngine(args.get("group"), interactive_cb))
         manager.list_packages()
 
     def clean(self, args, interactive_cb, send):
-        manager = PackageManager(PackageEngine(args.get("group")))
+        manager = PackageManager(PackageEngine(args.get("group"), interactive_cb))
         manager.clean(args.get("yes", False), interactive_cb)
 
 class LifecycleController:
@@ -61,7 +61,7 @@ class LifecycleController:
         if_created = args.get("if_created", False)
         verbose = args.get("verbose", False)
         
-        manager = LifecycleManager(args.get("group"))
+        manager = LifecycleManager(args.get("group"), interactive_cb)
         
         def do_execute(pkg):
             try:

@@ -16,7 +16,7 @@ class GroupManager:
     """Resolves stegOS group names from optional partial prefixes."""
 
     @staticmethod
-    def resolve(prefix=None):
+    def resolve(prefix=None, interactive_cb=None):
         """Resolves a group name from an optional prefix.
 
         Resolution rules:
@@ -29,6 +29,7 @@ class GroupManager:
 
         Args:
             prefix: Optional group name or prefix to match against.
+            interactive_cb: Optional callback for interactive prompts.
 
         Returns:
             The fully-qualified group name string.
@@ -50,6 +51,11 @@ class GroupManager:
             if len(all_groups) == 1:
                 return all_groups[0]
             if len(all_groups) > 1:
+                if interactive_cb:
+                    ans = interactive_cb("Multiple groups exist", choices=all_groups, default=None)
+                    if ans in all_groups:
+                        return ans
+                    raise ValueError(f"Invalid selection: {ans}")
                 if sys.stdin.isatty():
                     print("Multiple groups exist:")
                     for idx, g in enumerate(all_groups, 1):
@@ -71,6 +77,11 @@ class GroupManager:
         if len(matches) == 1:
             return matches[0]
         if len(matches) > 1:
+            if interactive_cb:
+                ans = interactive_cb(f"Ambiguous group prefix '{prefix}'", choices=matches, default=None)
+                if ans in matches:
+                    return ans
+                raise ValueError(f"Invalid selection: {ans}")
             if sys.stdin.isatty():
                 print(f"Ambiguous group prefix '{prefix}':")
                 for idx, g in enumerate(matches, 1):

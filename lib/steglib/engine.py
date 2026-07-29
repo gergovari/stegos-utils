@@ -61,13 +61,14 @@ def parse_consumes(manifest):
 class PackageEngine:
     """Core engine for package operations within a single stegOS group."""
 
-    def __init__(self, group_prefix=None):
+    def __init__(self, group_prefix=None, interactive_cb=None):
         """Initializes the PackageEngine.
 
         Args:
             group_prefix (str, optional): Target group name or prefix.
+            interactive_cb: Optional callback for interactive prompts.
         """
-        self.group_name = GroupManager.resolve(group_prefix)
+        self.group_name = GroupManager.resolve(group_prefix, interactive_cb)
         self.group_dir = os.path.join(PERSISTENT_DIR, self.group_name)
         self.repo_dir = os.path.join(REPOS_DIR, self.group_name)
 
