@@ -4,6 +4,7 @@ from unittest.mock import patch, mock_open, MagicMock, call
 import subprocess
 
 from steglib.backend import BackendBase, DockerComposeBackend, BACKENDS
+from steglib.exceptions import BackendError, InsufficientSpaceError, PortConflictError, NetworkNotFoundError
 
 def test_backend_base_init():
     base = BackendBase("pkg1", "/pkg_path", "/group_dir")
@@ -222,9 +223,53 @@ def test_execute_subprocess_error(mock_info, mock_error, mock_run, mock_getsize,
         raise subprocess.CalledProcessError(1, cmd=args[0], stderr="some error")
     mock_run.side_effect = side_effect
     
-    with pytest.raises(RuntimeError):
+    with pytest.raises(BackendError):
         backend.execute("logs")
     assert mock_error.called
+
+@patch("os.path.isfile", return_value=True)
+@patch("os.path.getsize", return_value=100)
+@patch("steglib.backend.run_cmd")
+@patch("shutil.disk_usage")
+def test_execute_no_space_error(mock_disk_usage, mock_run, mock_getsize, mock_isfile):
+    backend = DockerComposeBackend("pkg1", "/pkg_path", "/group_dir")
+    
+    def side_effect(*args, **kwargs):
+        raise subprocess.CalledProcessError(1, cmd=args[0], stderr="no space left on device")
+    mock_run.side_effect = side_effect
+    
+    mock_usage = MagicMock()
+    mock_usage.free = 1024 * 1024 * 50
+    mock_disk_usage.return_value = mock_usage
+    
+    with pytest.raises(InsufficientSpaceError):
+        backend.execute("logs")
+
+@patch("os.path.isfile", return_value=True)
+@patch("os.path.getsize", return_value=100)
+@patch("steglib.backend.run_cmd")
+def test_execute_port_conflict_error(mock_run, mock_getsize, mock_isfile):
+    backend = DockerComposeBackend("pkg1", "/pkg_path", "/group_dir")
+    
+    def side_effect(*args, **kwargs):
+        raise subprocess.CalledProcessError(1, cmd=args[0], stderr="address already in use")
+    mock_run.side_effect = side_effect
+    
+    with pytest.raises(PortConflictError):
+        backend.execute("logs")
+
+@patch("os.path.isfile", return_value=True)
+@patch("os.path.getsize", return_value=100)
+@patch("steglib.backend.run_cmd")
+def test_execute_network_not_found_error(mock_run, mock_getsize, mock_isfile):
+    backend = DockerComposeBackend("pkg1", "/pkg_path", "/group_dir")
+    
+    def side_effect(*args, **kwargs):
+        raise subprocess.CalledProcessError(1, cmd=args[0], stderr="network not found")
+    mock_run.side_effect = side_effect
+    
+    with pytest.raises(NetworkNotFoundError):
+        backend.execute("logs")
 
 @patch("os.path.isfile", return_value=True)
 @patch("os.path.getsize", return_value=100)

@@ -1,8 +1,10 @@
 """Runtime backends for stegOS packages."""
 
 import os
+import shutil
 import yaml
 from steglib.utils import run_cmd
+from steglib.exceptions import BackendError, InsufficientSpaceError, PortConflictError, NetworkNotFoundError
 import subprocess
 import hashlib
 import logging
@@ -202,9 +204,38 @@ class DockerComposeBackend(BackendBase):
                         logger.error(res.stderr.strip())
         except subprocess.CalledProcessError as e:
             details = (e.stderr or e.output or "No output.").strip()
-            err_msg = f"[{self.pkg}] Failed to {action}: Docker command failed with exit code {e.returncode}.\nDetails:\n{details}"
+            details_lower = details.lower()
+            
+            friendly_msg = None
+            exc_class = BackendError
+            if "no space left on device" in details_lower:
+                try:
+                    usage = shutil.disk_usage(self.group_dir)
+                    free_mb = usage.free / (1024 * 1024)
+                    friendly_msg = f"Insufficient disk space. Available on group storage: {free_mb:.2f} MB."
+                except Exception:
+                    friendly_msg = "Insufficient disk space on device."
+                exc_class = InsufficientSpaceError
+            elif "address already in use" in details_lower or "port is already allocated" in details_lower:
+                friendly_msg = "A required port is already in use by another service on the host."
+                exc_class = PortConflictError
+            elif "network not found" in details_lower:
+                friendly_msg = "A required docker network was not found."
+                exc_class = NetworkNotFoundError
+                
+            if friendly_msg:
+                if verbose:
+                    err_msg = f"[{self.pkg}] Failed to {action}: {friendly_msg}\nDetails:\n{details}"
+                else:
+                    err_msg = f"[{self.pkg}] Failed to {action}: {friendly_msg} (run with --verbose for logs)"
+            else:
+                if verbose:
+                    err_msg = f"[{self.pkg}] Failed to {action}: Docker command failed with exit code {e.returncode}.\nDetails:\n{details}"
+                else:
+                    err_msg = f"[{self.pkg}] Failed to {action}: Docker command failed with exit code {e.returncode}. (run with --verbose for logs)"
+            
             logger.error(err_msg)
-            raise RuntimeError(err_msg)
+            raise exc_class(err_msg, details=details)
         except Exception as e:
             err_msg = f"[{self.pkg}] Failed to {action}: {e}"
             logger.error(err_msg)
