@@ -83,6 +83,8 @@ class DockerComposeBackend(BackendBase):
                     
             if not images:
                 return None
+            
+            logger.info("  └── ⚠️  Disk space exhausted. ⏳ Calculating estimated download size (Press Ctrl+C to skip)...")
                 
             total_bytes = 0
             env = dict(os.environ)
@@ -94,15 +96,24 @@ class DockerComposeBackend(BackendBase):
                 if m_res.returncode == 0:
                     try:
                         data = json.loads(m_res.stdout)
+                        
+                        def extract_layers_size(obj):
+                            for v in obj.values():
+                                if isinstance(v, dict) and "layers" in v:
+                                    return sum(l.get("Size", l.get("size", 0)) for l in v["layers"]), True
+                            return 0, False
+
                         if isinstance(data, list):
                             for m in data:
                                 if m.get("Platform", {}).get("architecture") in ("amd64", "arm64"):
-                                    manifest = m.get("SchemaV2Manifest", {}) or m.get("OCIManifest", {})
-                                    total_bytes += sum(l.get("Size", l.get("size", 0)) for l in manifest.get("layers", []))
-                                    break
+                                    size, found = extract_layers_size(m)
+                                    if found:
+                                        total_bytes += size
+                                        break
                         elif isinstance(data, dict):
-                            manifest = data.get("SchemaV2Manifest", {}) or data.get("OCIManifest", {})
-                            total_bytes += sum(l.get("Size", l.get("size", 0)) for l in manifest.get("layers", []))
+                            size, found = extract_layers_size(data)
+                            if found:
+                                total_bytes += size
                     except json.JSONDecodeError as e:
                         logger.error(f"Failed to parse manifest JSON for {image}: {e}")
                 else:
