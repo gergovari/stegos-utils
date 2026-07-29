@@ -161,7 +161,7 @@ class PackageManager:
         else:
             instances = os.listdir(self.engine.group_dir) if os.path.isdir(self.engine.group_dir) else []
 
-        count = 0
+        upgraded_instances = []
         for instance_id in instances:
             inst = Instance(self.engine.group_name, instance_id)
             if not inst.is_installed:
@@ -178,34 +178,45 @@ class PackageManager:
                 logger.info("[%s] Ensuring instance is up to date...", instance_id)
                 from steglib.lifecycle import LifecycleManager
                 lm = LifecycleManager(self.engine.group_name)
-                lm.execute("start", instance_id, True, False)
-                count += 1
+                res = lm.execute("start", instance_id, True, False)
+                upgraded_instances.append(instance_id)
             except Exception as exc:
                 logger.warning("Could not upgrade '%s' (instance '%s'): %s", pkg_name, instance_id, exc)
-        
-        logger.info("Upgraded %d instance(s) in group '%s'.", count, self.engine.group_name)
+
+        if upgraded_instances:
+            logger.info("Upgraded instances in group '%s': %s", self.engine.group_name, ", ".join(upgraded_instances))
+        else:
+            logger.info("No instances upgraded in group '%s'.", self.engine.group_name)
 
     def update(self):
         """Updates app repositories via git pull."""
         if not os.path.isdir(self.engine.repo_dir):
             raise FileNotFoundError(f"Repos directory '{self.engine.repo_dir}' does not exist.")
 
-        count = 0
+        updated_repos = []
         for name in os.listdir(self.engine.repo_dir):
             repo_path = os.path.join(self.engine.repo_dir, name)
             if not os.path.isdir(os.path.join(repo_path, ".git")):
                 logger.info("[%s] Skipping (not a git repository).", name)
                 continue
-            logger.info("[%s] Pulling from remote...", name)
+            logger.info("[%s] Checking for updates...", name)
             try:
-                run_cmd(
+                res = run_cmd(
                     ["git", "-c", f"safe.directory={repo_path}", "pull", "--rebase", "--autostash"],
                     logger=logger, cwd=repo_path, error_msg=f"Failed to update '{name}'.", check=True
                 )
-                count += 1
+                if "Already up to date." not in (res.stdout or ""):
+                    logger.info("[%s] Successfully updated from remote.", name)
+                    updated_repos.append(name)
+                else:
+                    logger.info("[%s] Already up to date.", name)
             except Exception:
                 pass
-        logger.info("Updated %d repository(ies).", count)
+                
+        if updated_repos:
+            logger.info("Updated repositories: %s", ", ".join(updated_repos))
+        else:
+            logger.info("All repositories are up to date.")
 
     def list_packages(self):
         """Lists installed packages."""
