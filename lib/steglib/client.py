@@ -133,7 +133,7 @@ class StegClient:
                     raise RuntimeError(msg.get("error"))
                 elif msg["type"] == "log":
                     if console:
-                        console.print(msg.get("message"))
+                        console.print(msg.get("message"), markup=False)
                     else:
                         import sys
                         print(msg.get("message"), file=sys.stderr)

@@ -47,8 +47,8 @@ def handle_stream(rfile, wfile):
     root_logger.setLevel(logging.INFO if not args.get("verbose") else logging.DEBUG)
 
     try:
-        dispatcher.dispatch(action, args, interactive_cb, send)
-        send({"type": "done", "result": "Success"})
+        result = dispatcher.dispatch(action, args, interactive_cb, send)
+        send({"type": "done", "result": result if result is not None else "Success"})
     except Exception as e:
         send({"type": "error", "error": str(e)})
     finally:

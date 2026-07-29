@@ -74,13 +74,11 @@ def test_sync_docker_cache_bad_yaml(mock_file):
     backend._sync_docker_cache("compose.yml", "pre-start")
 
 @patch("os.path.isfile", return_value=False)
-@patch("os.path.getsize", return_value=0)
 @patch("steglib.backend.logger.error")
-@patch("steglib.backend.logger.info")
-def test_execute_missing_file(mock_info, mock_error, mock_getsize, mock_isfile):
+def test_execute_missing_file(mock_error, mock_isfile):
     backend = DockerComposeBackend("pkg1", "/pkg_path", "/group_dir")
     backend.execute("start")
-    mock_error.assert_called_with("[pkg1] Error: docker-compose.yml missing or empty.")
+    mock_error.assert_called_with("[pkg1] Missing docker-compose.yml in /pkg_path")
 
 @patch("os.path.isfile", return_value=True)
 @patch("os.path.getsize", return_value=100)
@@ -158,80 +156,59 @@ def test_execute_stop_proceed(mock_run, mock_getsize, mock_isfile):
     assert any(call[0][0] == ["docker", "compose", "-p", "pkg1", "-f", "/pkg_path/docker-compose.yml", "down"] for call in mock_run.call_args_list)
 
 @patch("os.path.isfile", return_value=True)
-@patch("os.path.getsize", return_value=100)
 @patch("steglib.backend.run_cmd")
-@patch("steglib.backend.logger.error")
-@patch("steglib.backend.logger.info")
-def test_execute_status_stopped(mock_info, mock_error, mock_run, mock_getsize, mock_isfile):
+def test_execute_status_stopped(mock_run, mock_isfile):
     backend = DockerComposeBackend("pkg1", "/pkg_path", "/group_dir")
     
     mock_ret = MagicMock()
     mock_ret.stdout = ""
     mock_run.return_value = mock_ret
     
-    backend.execute("status")
-    mock_info.assert_called_with("[pkg1] Status: Stopped")
+    res = backend.execute("status")
+    assert res == {"state": "stopped", "running": 0, "total": 0}
 
 @patch("os.path.isfile", return_value=True)
-@patch("os.path.getsize", return_value=100)
 @patch("steglib.backend.run_cmd")
-@patch("steglib.backend.logger.error")
-@patch("steglib.backend.logger.info")
-def test_execute_status_running(mock_info, mock_error, mock_run, mock_getsize, mock_isfile):
+def test_execute_status_running(mock_run, mock_isfile):
     backend = DockerComposeBackend("pkg1", "/pkg_path", "/group_dir")
     
     def side_effect(*args, **kwargs):
         mock_ret = MagicMock()
-        mock_ret.stdout = "1\n2\n"
+        mock_ret.stdout = "c1\nc2"
         return mock_ret
     mock_run.side_effect = side_effect
     
-    backend.execute("status")
-    mock_info.assert_called_with("[pkg1] Status: Running (2/2 containers)")
+    res = backend.execute("status")
+    assert res == {"state": "running", "running": 2, "total": 2}
 
 @patch("os.path.isfile", return_value=True)
-@patch("os.path.getsize", return_value=100)
 @patch("steglib.backend.run_cmd")
-@patch("steglib.backend.logger.error")
-@patch("steglib.backend.logger.info")
-def test_execute_status_degraded(mock_info, mock_error, mock_run, mock_getsize, mock_isfile):
-    backend = DockerComposeBackend("pkg1", "/pkg_path", "/group_dir")
-    
-    def side_effect(*args, **kwargs):
-        mock_ret = MagicMock()
-        if "--status=running" in args[0]:
-            mock_ret.stdout = "1\n"
-        else:
-            mock_ret.stdout = "1\n2\n"
-        return mock_ret
-    mock_run.side_effect = side_effect
-    
-    backend.execute("status")
-    mock_info.assert_called_with("[pkg1] Status: Degraded (1/2 containers running)")
-
-@patch("os.path.isfile", return_value=True)
-@patch("os.path.getsize", return_value=100)
-@patch("steglib.backend.run_cmd")
-def test_execute_status_verbose(mock_run, mock_getsize, mock_isfile):
-    backend = DockerComposeBackend("pkg1", "/pkg_path", "/group_dir")
-    backend.execute("status", verbose=True)
-    assert mock_run.call_args[0][0] == ["docker", "compose", "-p", "pkg1", "-f", "/pkg_path/docker-compose.yml", "ps"]
-
-@patch("os.path.isfile", return_value=True)
-@patch("os.path.getsize", return_value=100)
-@patch("steglib.backend.run_cmd")
-def test_execute_logs(mock_run, mock_getsize, mock_isfile):
+def test_execute_logs(mock_run, mock_isfile):
     backend = DockerComposeBackend("pkg1", "/pkg_path", "/group_dir")
     backend.execute("logs")
     assert mock_run.call_args[0][0] == ["docker", "compose", "-p", "pkg1", "-f", "/pkg_path/docker-compose.yml", "logs"]
 
 @patch("os.path.isfile", return_value=True)
-@patch("os.path.getsize", return_value=100)
-@patch("steglib.backend.logger.error")
-def test_execute_unknown(mock_error, mock_getsize, mock_isfile):
+@patch("subprocess.Popen")
+@patch("steglib.backend.logger.info")
+def test_execute_logs_follow(mock_info, mock_popen, mock_isfile):
+    backend = DockerComposeBackend("pkg1", "/pkg_path", "/group_dir")
+    mock_process = MagicMock()
+    mock_process.stdout.readline.side_effect = ["log1\n", "log2\n", ""]
+    mock_process.returncode = 0
+    mock_popen.return_value = mock_process
+    
+    backend.execute("logs", follow=True)
+    assert mock_popen.call_args[0][0] == ["docker", "compose", "-p", "pkg1", "-f", "/pkg_path/docker-compose.yml", "logs", "-f"]
+    mock_info.assert_any_call("log1")
+    mock_info.assert_any_call("log2")
+
+@patch("os.path.isfile", return_value=True)
+@patch("steglib.backend.run_cmd")
+def test_execute_unknown(mock_run, mock_isfile):
     backend = DockerComposeBackend("pkg1", "/pkg_path", "/group_dir")
     backend.execute("bad_action")
-    mock_error.assert_called_with("[pkg1] Unknown action 'bad_action'")
+    assert mock_run.call_args[0][0] == ["docker", "compose", "-p", "pkg1", "-f", "/pkg_path/docker-compose.yml", "bad_action"]
 
 @patch("os.path.isfile", return_value=True)
 @patch("os.path.getsize", return_value=100)

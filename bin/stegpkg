@@ -11,17 +11,13 @@ import sys
 from steglib.constants import VERSION
 from steglib.client import StegClient
 
-def main():
-    try:
-        from rich_argparse import RichHelpFormatter
-        formatter_class = RichHelpFormatter
-    except ImportError:
-        formatter_class = argparse.HelpFormatter
+from steglib.cli_utils import setup_cli, init_cli_client
 
-    parser = argparse.ArgumentParser(description="stegOS Package Manager", formatter_class=formatter_class)
-    parser.add_argument("--version", action="version", version=f"stegpkg {VERSION}")
-    parser.add_argument("-v", "--verbose", action="store_true", help="Enable verbose logging")
-    parser.add_argument("--daemon-url", help="URL of the stegd daemon (default: unix:///run/stegos/stegos.sock or STEGOS_DAEMON_URL)")
+def main():
+    parser, parent_parser, formatter_class = setup_cli(
+        description="stegOS Package Manager",
+        version_str=f"stegpkg {VERSION}"
+    )
     
     subparsers = parser.add_subparsers(dest="command", required=True, title="commands", description="Action to perform")
 
@@ -66,10 +62,7 @@ def main():
     p.add_argument("-y", "--yes", action="store_true", help="Automatic yes to prompts")
 
     args = parser.parse_args()
-    
-    log_level = logging.DEBUG if args.verbose else logging.INFO
-    logging.basicConfig(level=log_level, format="%(message)s")
-    client = StegClient(url=args.daemon_url)
+    client = init_cli_client(args)
     try:
         args_dict = vars(args).copy()
         if "command" in args_dict:

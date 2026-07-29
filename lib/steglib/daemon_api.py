@@ -19,7 +19,7 @@ class ActionDispatcher:
         controller = self._controllers[prefix]
         if not hasattr(controller, method):
             raise ValueError(f"Unknown method '{method}' for prefix '{prefix}'")
-        getattr(controller, method)(args, interactive_cb, send)
+        return getattr(controller, method)(args, interactive_cb, send)
 
 class PackageController:
     def install(self, args, interactive_cb, send):
@@ -48,7 +48,7 @@ class PackageController:
 
     def list(self, args, interactive_cb, send):
         manager = PackageManager(PackageEngine(args.get("group"), interactive_cb))
-        manager.list_packages()
+        return manager.list_packages()
 
     def clean(self, args, interactive_cb, send):
         manager = PackageManager(PackageEngine(args.get("group"), interactive_cb))
@@ -60,28 +60,33 @@ class LifecycleController:
         package_name = args.get("package")
         if_created = args.get("if_created", False)
         verbose = args.get("verbose", False)
+        follow = args.get("follow", False)
         
         manager = LifecycleManager(args.get("group"), interactive_cb)
         
         def do_execute(pkg):
             try:
                 if act == "restart":
-                    manager.execute("stop", pkg, if_created, verbose)
-                    manager.execute("start", pkg, if_created, verbose)
+                    manager.execute("stop", pkg, if_created, verbose, follow=False)
+                    manager.execute("start", pkg, if_created, verbose, follow=False)
                 else:
-                    manager.execute(act, pkg, if_created, verbose)
+                    manager.execute(act, pkg, if_created, verbose, follow=follow)
             except MultipleInstancesError as e:
                 choices = ["All instances"] + e.instances
                 ans = interactive_cb(f"Multiple instances match '{pkg}'", prompt_type="select", choices=choices, default=None)
                 if not ans:
                     raise RuntimeError("Aborted")
                 if ans == "All instances":
+                    results = {}
                     for inst in e.instances:
-                        do_execute(inst)
+                        res = do_execute(inst)
+                        if isinstance(res, dict):
+                            results.update(res)
+                    return results
                 else:
-                    do_execute(ans)
+                    return do_execute(ans)
                     
-        do_execute(package_name)
+        return do_execute(package_name)
 
 class GroupController:
     def init(self, args, interactive_cb, send):

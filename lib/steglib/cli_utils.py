@@ -91,3 +91,29 @@ def do_local_prompt(message, prompt_type="text", choices=None, default=None, mul
         return float(ans)
         
     return ans
+
+import argparse
+import logging
+from steglib.client import StegClient
+
+def setup_cli(description, version_str):
+    try:
+        from rich_argparse import RichHelpFormatter
+        formatter_class = RichHelpFormatter
+    except ImportError:
+        formatter_class = argparse.HelpFormatter
+
+    parent_parser = argparse.ArgumentParser(add_help=False)
+    parent_parser.add_argument("-v", "--verbose", action="store_true", help="Enable verbose output")
+    parent_parser.add_argument("--daemon-url", help="URL of the stegd daemon (default: unix:///run/stegos/stegos.sock or STEGOS_DAEMON_URL)")
+
+    parser = argparse.ArgumentParser(description=description, formatter_class=formatter_class, parents=[parent_parser])
+    parser.add_argument('--version', action='version', version=version_str)
+    
+    return parser, parent_parser, formatter_class
+
+def init_cli_client(args):
+    log_level = logging.DEBUG if args.verbose else logging.INFO
+    logging.basicConfig(level=log_level, format="%(message)s")
+    client = StegClient(url=args.daemon_url)
+    return client

@@ -33,15 +33,15 @@ def test_lifecycle_controller_execute(mock_lm, dispatcher):
     send = Mock()
     
     dispatcher.dispatch("ctl.execute", args, interactive_cb, send)
-    mock_lm.return_value.execute.assert_called_once_with("start", "pkg1", False, False)
+    mock_lm.return_value.execute.assert_called_once_with("start", "pkg1", False, False, follow=False)
 
 @patch("steglib.daemon_api.LifecycleManager")
 def test_lifecycle_controller_restart(mock_lm, dispatcher):
     args = {"ctl_action": "restart", "package": "pkg1"}
     
     dispatcher.dispatch("ctl.execute", args, None, None)
-    mock_lm.return_value.execute.assert_any_call("stop", "pkg1", False, False)
-    mock_lm.return_value.execute.assert_any_call("start", "pkg1", False, False)
+    mock_lm.return_value.execute.assert_any_call("stop", "pkg1", False, False, follow=False)
+    mock_lm.return_value.execute.assert_any_call("start", "pkg1", False, False, follow=False)
 
 @patch("steglib.daemon_api.LifecycleManager")
 def test_lifecycle_controller_multiple_instances(mock_lm, dispatcher):
@@ -59,7 +59,7 @@ def test_lifecycle_controller_multiple_instances(mock_lm, dispatcher):
     dispatcher.dispatch("ctl.execute", args, interactive_cb, None)
     
     assert mock_lm.return_value.execute.call_count == 2
-    mock_lm.return_value.execute.assert_any_call("start", "inst2", False, False)
+    mock_lm.return_value.execute.assert_any_call("start", "inst2", False, False, follow=False)
 
 @patch("steglib.daemon_api.GroupInitializer")
 def test_group_controller_init(mock_gim, dispatcher):

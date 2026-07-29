@@ -32,7 +32,7 @@ class LifecycleManager:
         self.group_name = GroupManager.resolve(group_prefix, interactive_cb)
         self.cont_dir = os.path.join(PERSISTENT_DIR, self.group_name)
 
-    def execute(self, action, package_name=None, if_created=False, verbose=False):
+    def execute(self, action, package_name=None, if_created=False, verbose=False, follow=False):
         """Execute an action on a specific package or all packages in the group.
 
         Args:
@@ -40,6 +40,7 @@ class LifecycleManager:
             package_name (str, optional): Specific package to target.
             if_created (bool): If True, backend will skip starting uncreated containers.
             verbose (bool): If True, pass verbose flag down to the backend.
+            follow (bool): If True, follow logs.
 
         Raises:
             RuntimeError: If the group directory is not found.
@@ -134,6 +135,7 @@ class LifecycleManager:
                 packages_to_run = topo_order
 
         # Execute action
+        results = {}
         for pkg in packages_to_run:
             inst = Instance(self.group_name, pkg)
             if not inst.is_installed:
@@ -146,6 +148,10 @@ class LifecycleManager:
             if backend_cls:
                 pkg_path = os.path.join(self.cont_dir, pkg, BACKEND_DIR)
                 backend = backend_cls(pkg, pkg_path, self.cont_dir)
-                backend.execute(action, if_created, verbose)
+                res = backend.execute(action, if_created, verbose, follow)
+                if res is not None:
+                    results[pkg] = res
             else:
                 logger.warning("[%s] Warning: Unknown deployer '%s'", pkg, deployer)
+        
+        return results
