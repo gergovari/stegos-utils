@@ -7,3 +7,4 @@ prompt_toolkit>=3.0.0
 wcwidth
 markdown-it-py
 mdurl
+rich-argparse>=1.4.0

@@ -118,7 +118,7 @@ class DockerComposeBackend(BackendBase):
         """
         compose_file = os.path.join(self.pkg_path, "docker-compose.yml")
         if not os.path.isfile(compose_file) or os.path.getsize(compose_file) == 0:
-            print(f"[{self.pkg}] Error: docker-compose.yml missing or empty.")
+            logger.error(f"[{self.pkg}] Error: docker-compose.yml missing or empty.")
             return
         
         cmd = ["docker", "compose", "-p", self.pkg, "-f", compose_file]
@@ -159,35 +159,41 @@ class DockerComposeBackend(BackendBase):
         elif action == "logs":
             cmd.append("logs")
         else:
-            print(f"[{self.pkg}] Unknown action '{action}'")
+            logger.error(f"[{self.pkg}] Unknown action '{action}'")
             return
             
         try:
             if action == "start":
-                print(f"[{self.pkg}] Starting package...")
+                logger.info(f"[{self.pkg}] Starting package...")
                 run_cmd(cmd, logger=logger, error_msg="Docker command failed.", check=True)
                 self._sync_docker_cache(compose_file, "post-start")
             elif action == "stop":
-                print(f"[{self.pkg}] Stopping package...")
+                logger.info(f"[{self.pkg}] Stopping package...")
                 run_cmd(cmd, logger=logger, error_msg="Docker command failed.", check=True)
             elif action == "status":
                 if verbose:
-                    run_cmd(cmd + ["ps"], logger=logger, check=True)
+                    res = run_cmd(cmd + ["ps"], logger=logger, check=True)
+                    if res.stdout:
+                        logger.info(res.stdout.strip())
                 else:
                     all_ctrs = run_cmd(cmd + ["ps", "-q", "-a"], logger=logger, check=False).stdout.splitlines()
                     running_ctrs = run_cmd(cmd + ["ps", "-q", "--status=running"], logger=logger, check=False).stdout.splitlines()
                     
                     if not all_ctrs:
-                        print(f"[{self.pkg}] Status: Stopped")
+                        logger.info(f"[{self.pkg}] Status: Stopped")
                     elif len(running_ctrs) == len(all_ctrs):
-                        print(f"[{self.pkg}] Status: Running ({len(running_ctrs)}/{len(all_ctrs)} containers)")
+                        logger.info(f"[{self.pkg}] Status: Running ({len(running_ctrs)}/{len(all_ctrs)} containers)")
                     else:
-                        print(f"[{self.pkg}] Status: Degraded ({len(running_ctrs)}/{len(all_ctrs)} containers running)")
+                        logger.info(f"[{self.pkg}] Status: Degraded ({len(running_ctrs)}/{len(all_ctrs)} containers running)")
             else:
-                # For logs, we let the output flow to the user
-                run_cmd(cmd, logger=logger, capture_output=False, text=False, check=True)
+                # For logs, we must capture the output so the daemon sends it to the client
+                res = run_cmd(cmd, logger=logger, capture_output=True, text=True, check=True)
+                if res.stdout:
+                    logger.info(res.stdout.strip())
+                if res.stderr:
+                    logger.error(res.stderr.strip())
         except Exception as e:
-            print(f"[{self.pkg}] Error during {action}: {e}")
+            logger.error(f"[{self.pkg}] Error during {action}: {e}")
 
 BACKENDS = {
     "docker-compose": DockerComposeBackend,

@@ -13,16 +13,31 @@ from steglib.client import StegClient
 
 def main():
     """Main entry point for stegctl."""
-    parser = argparse.ArgumentParser(description="stegOS Runtime Orchestrator")
+    try:
+        from rich_argparse import RichHelpFormatter
+        formatter_class = RichHelpFormatter
+    except ImportError:
+        formatter_class = argparse.HelpFormatter
+
+    parent_parser = argparse.ArgumentParser(add_help=False)
+    parent_parser.add_argument("-v", "--verbose", action="store_true", help="Enable verbose output")
+    parent_parser.add_argument("--daemon-url", help="URL of the stegd daemon (default: unix:///run/stegos/stegos.sock or STEGOS_DAEMON_URL)")
+
+    parser = argparse.ArgumentParser(description="stegOS Runtime Orchestrator", formatter_class=formatter_class, parents=[parent_parser])
     parser.add_argument('--version', action='version', version=f'stegctl {VERSION}')
-    parser.add_argument("-v", "--verbose", action="store_true", help="Enable verbose output")
-    parser.add_argument("--daemon-url", help="URL of the stegd daemon (default: unix:///run/stegos/stegos.sock or STEGOS_DAEMON_URL)")
     
-    subparsers = parser.add_subparsers(dest="action", required=True, help="Action to perform")
+    subparsers = parser.add_subparsers(dest="action", required=True, title="commands", description="Action to perform")
     
-    actions = ["start", "stop", "restart", "status", "logs"]
-    for act in actions:
-        kwargs = {"help": f"{act.capitalize()} package(s)"}
+    actions = {
+        "start": "Start one or more packages",
+        "stop": "Stop running packages",
+        "restart": "Restart packages",
+        "status": "Check the status of packages",
+        "logs": "View logs from package containers"
+    }
+    
+    for act, help_text in actions.items():
+        kwargs = {"help": help_text, "formatter_class": formatter_class, "parents": [parent_parser]}
         if act == "logs":
             kwargs["aliases"] = ["log"]
         p = subparsers.add_parser(act, **kwargs)

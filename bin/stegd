@@ -55,7 +55,7 @@ def handle_stream(rfile, wfile):
         root_logger.handlers = old_handlers
 
 def main():
-    parser = argparse.ArgumentParser(description="StegOS Daemon")
+    parser = argparse.ArgumentParser(description="stegOS Daemon")
     parser.add_argument("--unix-socket", default="/run/stegos/stegos.sock", help="Path to the Unix socket to listen on")
     parser.add_argument("--tcp-port", type=int, help="TCP port to listen on (optional)")
     parser.add_argument("--tcp-host", default="0.0.0.0", help="TCP host")

@@ -75,11 +75,12 @@ def test_sync_docker_cache_bad_yaml(mock_file):
 
 @patch("os.path.isfile", return_value=False)
 @patch("os.path.getsize", return_value=0)
-@patch("builtins.print")
-def test_execute_missing_file(mock_print, mock_getsize, mock_isfile):
+@patch("steglib.backend.logger.error")
+@patch("steglib.backend.logger.info")
+def test_execute_missing_file(mock_info, mock_error, mock_getsize, mock_isfile):
     backend = DockerComposeBackend("pkg1", "/pkg_path", "/group_dir")
     backend.execute("start")
-    mock_print.assert_called_with("[pkg1] Error: docker-compose.yml missing or empty.")
+    mock_error.assert_called_with("[pkg1] Error: docker-compose.yml missing or empty.")
 
 @patch("os.path.isfile", return_value=True)
 @patch("os.path.getsize", return_value=100)
@@ -159,8 +160,9 @@ def test_execute_stop_proceed(mock_run, mock_getsize, mock_isfile):
 @patch("os.path.isfile", return_value=True)
 @patch("os.path.getsize", return_value=100)
 @patch("steglib.backend.run_cmd")
-@patch("builtins.print")
-def test_execute_status_stopped(mock_print, mock_run, mock_getsize, mock_isfile):
+@patch("steglib.backend.logger.error")
+@patch("steglib.backend.logger.info")
+def test_execute_status_stopped(mock_info, mock_error, mock_run, mock_getsize, mock_isfile):
     backend = DockerComposeBackend("pkg1", "/pkg_path", "/group_dir")
     
     mock_ret = MagicMock()
@@ -168,13 +170,14 @@ def test_execute_status_stopped(mock_print, mock_run, mock_getsize, mock_isfile)
     mock_run.return_value = mock_ret
     
     backend.execute("status")
-    mock_print.assert_called_with("[pkg1] Status: Stopped")
+    mock_info.assert_called_with("[pkg1] Status: Stopped")
 
 @patch("os.path.isfile", return_value=True)
 @patch("os.path.getsize", return_value=100)
 @patch("steglib.backend.run_cmd")
-@patch("builtins.print")
-def test_execute_status_running(mock_print, mock_run, mock_getsize, mock_isfile):
+@patch("steglib.backend.logger.error")
+@patch("steglib.backend.logger.info")
+def test_execute_status_running(mock_info, mock_error, mock_run, mock_getsize, mock_isfile):
     backend = DockerComposeBackend("pkg1", "/pkg_path", "/group_dir")
     
     def side_effect(*args, **kwargs):
@@ -184,13 +187,14 @@ def test_execute_status_running(mock_print, mock_run, mock_getsize, mock_isfile)
     mock_run.side_effect = side_effect
     
     backend.execute("status")
-    mock_print.assert_called_with("[pkg1] Status: Running (2/2 containers)")
+    mock_info.assert_called_with("[pkg1] Status: Running (2/2 containers)")
 
 @patch("os.path.isfile", return_value=True)
 @patch("os.path.getsize", return_value=100)
 @patch("steglib.backend.run_cmd")
-@patch("builtins.print")
-def test_execute_status_degraded(mock_print, mock_run, mock_getsize, mock_isfile):
+@patch("steglib.backend.logger.error")
+@patch("steglib.backend.logger.info")
+def test_execute_status_degraded(mock_info, mock_error, mock_run, mock_getsize, mock_isfile):
     backend = DockerComposeBackend("pkg1", "/pkg_path", "/group_dir")
     
     def side_effect(*args, **kwargs):
@@ -203,7 +207,7 @@ def test_execute_status_degraded(mock_print, mock_run, mock_getsize, mock_isfile
     mock_run.side_effect = side_effect
     
     backend.execute("status")
-    mock_print.assert_called_with("[pkg1] Status: Degraded (1/2 containers running)")
+    mock_info.assert_called_with("[pkg1] Status: Degraded (1/2 containers running)")
 
 @patch("os.path.isfile", return_value=True)
 @patch("os.path.getsize", return_value=100)
@@ -223,17 +227,18 @@ def test_execute_logs(mock_run, mock_getsize, mock_isfile):
 
 @patch("os.path.isfile", return_value=True)
 @patch("os.path.getsize", return_value=100)
-@patch("builtins.print")
-def test_execute_unknown(mock_print, mock_getsize, mock_isfile):
+@patch("steglib.backend.logger.error")
+def test_execute_unknown(mock_error, mock_getsize, mock_isfile):
     backend = DockerComposeBackend("pkg1", "/pkg_path", "/group_dir")
     backend.execute("bad_action")
-    mock_print.assert_called_with("[pkg1] Unknown action 'bad_action'")
+    mock_error.assert_called_with("[pkg1] Unknown action 'bad_action'")
 
 @patch("os.path.isfile", return_value=True)
 @patch("os.path.getsize", return_value=100)
 @patch("steglib.backend.run_cmd")
-@patch("builtins.print")
-def test_execute_subprocess_error(mock_print, mock_run, mock_getsize, mock_isfile):
+@patch("steglib.backend.logger.error")
+@patch("steglib.backend.logger.info")
+def test_execute_subprocess_error(mock_info, mock_error, mock_run, mock_getsize, mock_isfile):
     backend = DockerComposeBackend("pkg1", "/pkg_path", "/group_dir")
     
     def side_effect(*args, **kwargs):
@@ -241,14 +246,15 @@ def test_execute_subprocess_error(mock_print, mock_run, mock_getsize, mock_isfil
     mock_run.side_effect = side_effect
     
     backend.execute("logs")
-    assert mock_print.called
+    assert mock_error.called
 
 @patch("os.path.isfile", return_value=True)
 @patch("os.path.getsize", return_value=100)
 @patch("steglib.backend.run_cmd")
-@patch("builtins.print")
-def test_execute_oserror(mock_print, mock_run, mock_getsize, mock_isfile):
+@patch("steglib.backend.logger.error")
+@patch("steglib.backend.logger.info")
+def test_execute_oserror(mock_info, mock_error, mock_run, mock_getsize, mock_isfile):
     backend = DockerComposeBackend("pkg1", "/pkg_path", "/group_dir")
     mock_run.side_effect = OSError("os error")
     backend.execute("logs")
-    mock_print.assert_any_call("[pkg1] Error during logs: os error")
+    mock_error.assert_any_call("[pkg1] Error during logs: os error")

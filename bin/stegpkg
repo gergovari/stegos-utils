@@ -12,16 +12,21 @@ from steglib.constants import VERSION
 from steglib.client import StegClient
 
 def main():
-    """Main entry point for stegpkg."""
-    parser = argparse.ArgumentParser(description="stegOS Package Manager")
+    try:
+        from rich_argparse import RichHelpFormatter
+        formatter_class = RichHelpFormatter
+    except ImportError:
+        formatter_class = argparse.HelpFormatter
+
+    parser = argparse.ArgumentParser(description="stegOS Package Manager", formatter_class=formatter_class)
     parser.add_argument("--version", action="version", version=f"stegpkg {VERSION}")
     parser.add_argument("-v", "--verbose", action="store_true", help="Enable verbose logging")
     parser.add_argument("--daemon-url", help="URL of the stegd daemon (default: unix:///run/stegos/stegos.sock or STEGOS_DAEMON_URL)")
     
-    subparsers = parser.add_subparsers(dest="command", required=True)
+    subparsers = parser.add_subparsers(dest="command", required=True, title="commands", description="Action to perform")
 
     # -- install ------------------------------------------------------------
-    p = subparsers.add_parser("install", help="Install a package")
+    p = subparsers.add_parser("install", help="Install a package", formatter_class=formatter_class)
     p.add_argument("packages", nargs="+", help="Package(s) to install")
     p.add_argument("--id", help="Explicit instance ID")
     p.add_argument("--group", help="Target group")
@@ -31,32 +36,32 @@ def main():
     p.add_argument("--non-interactive", action="store_true", help="Never prompt; use defaults or abort")
 
     # -- reconfigure --------------------------------------------------------
-    p = subparsers.add_parser("reconfigure", help="Regenerate configuration")
+    p = subparsers.add_parser("reconfigure", help="Regenerate configuration", formatter_class=formatter_class)
     p.add_argument("instance_ids", nargs="*", help="Instance(s) to reconfigure (default: all)")
     p.add_argument("--group", help="Target group")
 
     # -- remove -------------------------------------------------------------
-    p = subparsers.add_parser("remove", help="Remove a package instance")
+    p = subparsers.add_parser("remove", help="Remove a package instance", formatter_class=formatter_class)
     p.add_argument("instance_ids", nargs="+", help="Instance(s) to remove")
     p.add_argument("--group", help="Target group")
     p.add_argument("--purge", action="store_true", help="Also delete persistent data")
     p.add_argument("--cascade", action="store_true", help="Auto-reconfigure dependents")
 
     # -- upgrade ------------------------------------------------------------
-    p = subparsers.add_parser("upgrade", help="Upgrade packages")
+    p = subparsers.add_parser("upgrade", help="Upgrade packages", formatter_class=formatter_class)
     p.add_argument("instance_ids", nargs="*", help="Instance(s) to upgrade (default: all)")
     p.add_argument("--group", help="Target group")
 
     # -- update -------------------------------------------------------------
-    p = subparsers.add_parser("update", help="Update app repositories via git pull")
+    p = subparsers.add_parser("update", help="Update app repositories via git pull", formatter_class=formatter_class)
     p.add_argument("--group", help="Target group")
 
     # -- list ---------------------------------------------------------------
-    p = subparsers.add_parser("list", help="List installed packages")
+    p = subparsers.add_parser("list", help="List installed packages", formatter_class=formatter_class)
     p.add_argument("--group", help="Target group")
 
     # -- clean --------------------------------------------------------------
-    p = subparsers.add_parser("clean", help="Remove unmanaged instance directories")
+    p = subparsers.add_parser("clean", help="Remove unmanaged instance directories", formatter_class=formatter_class)
     p.add_argument("--group", help="Target group")
     p.add_argument("-y", "--yes", action="store_true", help="Automatic yes to prompts")
 
