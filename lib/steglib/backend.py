@@ -73,7 +73,7 @@ class DockerComposeBackend(BackendBase):
         """Attempts to calculate the total compressed size of all images in the compose file."""
         try:
             # 1. Parse docker-compose config
-            res = run_cmd(["docker", "compose", "-f", compose_file, "config", "--format", "json"], capture_output=True, text=True, check=True)
+            res = run_cmd(["docker", "compose", "-f", compose_file, "config", "--format", "json"], logger, capture_output=True, text=True, check=True)
             config = json.loads(res.stdout)
             
             images = []
@@ -90,17 +90,19 @@ class DockerComposeBackend(BackendBase):
             
             for image in images:
                 # 2. Get manifest
-                m_res = run_cmd(["docker", "manifest", "inspect", "-v", image], env=env, capture_output=True, text=True, check=False)
+                m_res = run_cmd(["docker", "manifest", "inspect", "-v", image], logger, env=env, capture_output=True, text=True, check=False)
                 if m_res.returncode == 0:
                     try:
                         data = json.loads(m_res.stdout)
                         if isinstance(data, list):
                             for m in data:
                                 if m.get("Platform", {}).get("architecture") in ("amd64", "arm64"):
-                                    total_bytes += sum(l.get("Size", l.get("size", 0)) for l in m.get("SchemaV2Manifest", {}).get("layers", []))
+                                    manifest = m.get("SchemaV2Manifest", {}) or m.get("OCIManifest", {})
+                                    total_bytes += sum(l.get("Size", l.get("size", 0)) for l in manifest.get("layers", []))
                                     break
                         elif isinstance(data, dict):
-                            total_bytes += sum(l.get("Size", l.get("size", 0)) for l in data.get("SchemaV2Manifest", {}).get("layers", []))
+                            manifest = data.get("SchemaV2Manifest", {}) or data.get("OCIManifest", {})
+                            total_bytes += sum(l.get("Size", l.get("size", 0)) for l in manifest.get("layers", []))
                     except json.JSONDecodeError as e:
                         logger.error(f"Failed to parse manifest JSON for {image}: {e}")
                 else:
