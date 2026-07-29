@@ -43,6 +43,9 @@ def ensure_running(group_dir: str, verbose: bool = False) -> dict:
     os.makedirs(data_root, exist_ok=True)
     os.makedirs(exec_root, exist_ok=True)
     
+    # Label the backend directory and its contents so dockerd_t can manage it
+    subprocess.run(["chcon", "-R", "-t", "container_file_t", backend_dir], capture_output=True)
+    
     env = get_docker_env(group_dir)
     
     # 1. Check if it's already responding
