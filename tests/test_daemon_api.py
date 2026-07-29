@@ -36,6 +36,18 @@ def test_lifecycle_controller_execute(mock_lm, dispatcher):
     mock_lm.return_value.execute.assert_called_once_with("start", "pkg1", False, False, follow=False)
 
 @patch("steglib.daemon_api.LifecycleManager")
+def test_lifecycle_controller_status(mock_lm, dispatcher):
+    args = {"ctl_action": "status"}
+    
+    mock_lm.return_value.execute.return_value = {
+        "pkg1": {"state": "running", "running": 2, "total": 2}
+    }
+    
+    res = dispatcher.dispatch("ctl.execute", args, None, None)
+    mock_lm.return_value.execute.assert_called_once_with("status", None, False, False, follow=False)
+    assert res == {"pkg1": {"state": "running", "running": 2, "total": 2}}
+
+@patch("steglib.daemon_api.LifecycleManager")
 def test_lifecycle_controller_restart(mock_lm, dispatcher):
     args = {"ctl_action": "restart", "package": "pkg1"}
     

@@ -70,7 +70,7 @@ class LifecycleController:
                     manager.execute("stop", pkg, if_created, verbose, follow=False)
                     manager.execute("start", pkg, if_created, verbose, follow=False)
                 else:
-                    manager.execute(act, pkg, if_created, verbose, follow=follow)
+                    return manager.execute(act, pkg, if_created, verbose, follow=follow)
             except MultipleInstancesError as e:
                 choices = ["All instances"] + e.instances
                 ans = interactive_cb(f"Multiple instances match '{pkg}'", prompt_type="select", choices=choices, default=None)
