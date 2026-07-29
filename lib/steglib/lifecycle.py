@@ -147,7 +147,7 @@ class LifecycleManager:
             if backend_cls:
                 pkg_path = os.path.join(self.cont_dir, pkg, BACKEND_DIR)
                 backend = backend_cls(pkg, pkg_path, self.cont_dir)
-                res = backend.execute(action, if_created, follow)
+                res = backend.execute(action, if_created, follow=follow)
                 if res is not None:
                     results[pkg] = res
             else:
