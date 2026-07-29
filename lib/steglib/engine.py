@@ -306,6 +306,11 @@ class PackageEngine:
         for cap_name, cap_rules in consumes.items():
             providers = self.cap_manager.get_providers(cap_name)
             if not providers:
+                if cap_name in enabled:
+                    import logging
+                    logger = logging.getLogger(__name__)
+                    logger.warning(f"[{instance_name}] Integration '{cap_name}' providers disappeared! It will be disabled.")
+                    del enabled[cap_name]
                 continue
 
             prov_list = list(providers.keys())
@@ -324,6 +329,15 @@ class PackageEngine:
                     enabled[cap_name] = default_sel
                 continue
             
+            is_new = cap_name not in enabled and cap_name not in raw
+            
+            if not (reconfigure or not pkg_conf):
+                # We are upgrading. If the capability isn't new, don't reprompt!
+                if not is_new:
+                    if default_sel:
+                        enabled[cap_name] = default_sel
+                    continue
+            
             if interactive_cb:
                 msg = f"[{instance_name}] Integration available: '{cap_name}'. Available providers: {prov_list}."
                 if max_provs:
@@ -336,6 +350,13 @@ class PackageEngine:
                         enabled[cap_name] = ans_list
                     elif cap_name in enabled:
                         del enabled[cap_name]
+
+        for cap_name in list(enabled.keys()):
+            if cap_name not in consumes:
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.warning(f"[{instance_name}] Integration '{cap_name}' is no longer required by this package and was removed.")
+                del enabled[cap_name]
 
         return enabled
 
