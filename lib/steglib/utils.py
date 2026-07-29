@@ -18,7 +18,7 @@ def run_cmd(cmd, logger, error_msg=None, **kwargs):
     
     if result.returncode != 0:
         if error_msg:
-            logger.warning(error_msg)
+            logger.debug(error_msg)
             
         err_out = result.stderr.strip() if result.stderr else ""
         std_out = result.stdout.strip() if result.stdout else ""
