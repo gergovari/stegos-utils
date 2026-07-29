@@ -199,11 +199,7 @@ class PackageManager:
             logger.info("[%s] Pulling from remote...", name)
             try:
                 run_cmd(
-                    ["git", "config", "--global", "--add", "safe.directory", repo_path],
-                    logger=logger, error_msg=f"Failed to configure safe.directory for '{name}'.", check=True
-                )
-                run_cmd(
-                    ["git", "pull", "--rebase", "--autostash"],
+                    ["git", "-c", f"safe.directory={repo_path}", "pull", "--rebase", "--autostash"],
                     logger=logger, cwd=repo_path, error_msg=f"Failed to update '{name}'.", check=True
                 )
                 count += 1

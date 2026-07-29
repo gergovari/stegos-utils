@@ -187,7 +187,7 @@ def test_update(mock_run, mock_isdir, mock_listdir):
     manager = PackageManager(engine_mock)
     manager.update()
     
-    assert mock_run.call_count == 2
+    assert mock_run.call_count == 1
 
 @patch("steglib.manager.os.listdir", return_value=["inst1", "inst2"])
 @patch("steglib.manager.os.path.isdir", return_value=True)
