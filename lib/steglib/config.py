@@ -6,7 +6,7 @@ class ConfigResolver:
     """Interactively (or non-interactively) resolves configuration values
     against a JSON Schema definition."""
 
-    def __init__(self, schema, pkg_conf, cli_conf, reconfigure, non_interactive):
+    def __init__(self, schema, pkg_conf, cli_conf, reconfigure, non_interactive, interactive_cb=None):
         """Initializes the ConfigResolver.
         
         Args:
@@ -15,12 +15,14 @@ class ConfigResolver:
             cli_conf: Configuration overrides provided via CLI.
             reconfigure: If True, forces re-prompting for all values.
             non_interactive: If True, aborts when required input is missing.
+            interactive_cb: Optional callback for interactive prompts.
         """
         self.schema = schema
         self.pkg_conf = pkg_conf
         self.cli_conf = cli_conf
         self.reconfigure = reconfigure
         self.non_interactive = non_interactive
+        self.interactive_cb = interactive_cb
         
         self.properties = self.schema.get("properties", {})
         self.required = set(self.schema.get("required", []))
@@ -104,25 +106,37 @@ class ConfigResolver:
         is_req = key in self.required
         
         desc = prop.get("description", "")
-        prompt = key
+        base_prompt = key
         if desc:
-            prompt += f" ({desc})"
-        if default != "":
-            prompt += f" [default: {default}]"
-        prompt += ": "
+            base_prompt += f" ({desc})"
 
         while True:
-            user_input = input(prompt)
-            if not user_input and default != "":
-                val = default
-            elif not user_input and is_req:
-                print("This field is required.")
-                continue
-            elif not user_input:
-                val = None
-                break
+            if self.interactive_cb:
+                val = self.interactive_cb(base_prompt, default=default if default != "" else None)
+                if (val is None or val == "") and is_req:
+                    base_prompt = f"[Required] {key}"
+                    continue
+                if val is None or val == "":
+                    val = default if default != "" else None
             else:
-                val = user_input
+                prompt = base_prompt
+                if default != "":
+                    prompt += f" [default: {default}]"
+                prompt += ": "
+                user_input = input(prompt)
+                if not user_input and default != "":
+                    val = default
+                elif not user_input and is_req:
+                    print("This field is required.")
+                    continue
+                elif not user_input:
+                    val = None
+                    break
+                else:
+                    val = user_input
+
+            if val is None or val == "":
+                break
 
             val_type = prop.get("type", "string")
             if val is not None:
@@ -134,7 +148,10 @@ class ConfigResolver:
                     elif val_type == "boolean":
                         val = str(val).lower() in ("true", "1", "yes", "y")
                 except ValueError:
-                    print(f"Invalid type. Expected {val_type}.")
+                    if self.interactive_cb:
+                        base_prompt = f"[Invalid type, expected {val_type}] {key}"
+                    else:
+                        print(f"Invalid type. Expected {val_type}.")
                     continue
 
             if val is not None:

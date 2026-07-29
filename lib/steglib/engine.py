@@ -171,12 +171,9 @@ class PackageEngine:
 
         final_conf = {}
         if config_schema:
-            resolver = ConfigResolver(config_schema, pkg_conf, cli_conf, reconfigure, non_interactive)
-            # Inject our callback if provided so ConfigResolver can use it.
-            if interactive_cb and not non_interactive:
-                # Override prompt method dynamically or have interactive_cb passed
-                # In stegos-utils this might require updating config.py as well
-                pass
+            resolver = ConfigResolver(
+                config_schema, pkg_conf, cli_conf, reconfigure, non_interactive, interactive_cb=interactive_cb if not non_interactive else None
+            )
             final_conf = resolver.resolve()
             try:
                 jsonschema.validate(instance=final_conf, schema=config_schema)
