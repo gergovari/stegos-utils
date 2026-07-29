@@ -72,7 +72,7 @@ class LifecycleController:
                     manager.execute(act, pkg, if_created, verbose)
             except MultipleInstancesError as e:
                 choices = ["All instances"] + e.instances
-                ans = interactive_cb(f"Multiple instances match '{pkg}'", choices, default=None)
+                ans = interactive_cb(f"Multiple instances match '{pkg}'", prompt_type="select", choices=choices, default=None)
                 if not ans:
                     raise RuntimeError("Aborted")
                 if ans == "All instances":

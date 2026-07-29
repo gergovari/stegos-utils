@@ -219,7 +219,7 @@ class PackageEngine:
             return matched[0]
         if len(matched) > 1:
             if interactive_cb:
-                ans = interactive_cb(f"Multiple instances match '{name}'", matched, default=None)
+                ans = interactive_cb(f"Multiple instances match '{name}'", prompt_type="select", choices=matched, default=None)
                 if ans and ans in matched:
                     return ans
             raise ValueError(f"Multiple instances of '{name}' found: {matched}. Specify the exact instance ID.")
@@ -240,7 +240,7 @@ class PackageEngine:
                 elif len(matched) > 1:
                     if interactive_cb:
                         choices = ["All"] + matched
-                        ans = interactive_cb(f"Multiple instances match '{name}'", choices, default="All")
+                        ans = interactive_cb(f"Multiple instances match '{name}'", prompt_type="select", choices=choices, default="All")
                         if ans == "All":
                             for m in matched:
                                 if m not in results:
@@ -274,7 +274,7 @@ class PackageEngine:
                 return existing[0]
             if len(existing) > 1:
                 if interactive_cb:
-                    ans = interactive_cb(f"Multiple instances of '{pkg_name}' exist", existing, default=None)
+                    ans = interactive_cb(f"Multiple instances of '{pkg_name}' exist", prompt_type="select", choices=existing, default=None)
                     if ans in existing:
                         return ans
                 raise ValueError(f"Multiple instances of '{pkg_name}' exist. Specify --id.")
@@ -318,7 +318,7 @@ class PackageEngine:
                 msg = f"Integration available: '{cap_name}'. Available providers: {prov_list}."
                 if max_provs:
                     msg += f" (Max {max_provs})"
-                ans_list = interactive_cb(msg, prov_list, default=",".join(default_sel), multiple=True)
+                ans_list = interactive_cb(msg, prompt_type="multiselect", choices=prov_list, default=",".join(default_sel), multiple=True)
                 if ans_list is not None:
                     if max_provs and len(ans_list) > max_provs:
                         raise ValueError(f"Max {max_provs} provider(s) allowed for {cap_name}.")

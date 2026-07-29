@@ -119,7 +119,7 @@ class PackageManager:
             elif interactive_cb:
                 ans = interactive_cb(
                     "Reconfigure these instances to remove the integration and restart?",
-                    ["y", "n"], default="n"
+                    prompt_type="confirm", choices=["y", "n"], default="n"
                 )
             else:
                 raise ValueError(f"Cannot remove instances with active dependents: {all_dependents}")
@@ -257,7 +257,7 @@ class PackageManager:
         if auto_confirm:
             ans = "y"
         elif interactive_cb:
-            ans = interactive_cb("Delete these directories permanently?", ["y", "n"], default="n")
+            ans = interactive_cb("Delete these directories permanently?", prompt_type="confirm", choices=["y", "n"], default="n")
         else:
             raise ValueError("Auto-confirm not specified and no interactive handler available.")
 

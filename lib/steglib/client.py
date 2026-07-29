@@ -94,25 +94,49 @@ class StegClient:
             raise RuntimeError(f"Failed to upgrade connection: {resp.status} {resp.reason}")
         return conn.sock
 
-    def call_interactive(self, action, args):
+    def call_interactive(self, action, args, prompt_callback=None):
         sock = self.stream()
         f = sock.makefile("rw")
         f.write(json.dumps({"action": action, "args": args}) + "\n")
         f.flush()
-        while True:
-            line = f.readline()
-            if not line:
-                break
-            msg = json.loads(line)
-            if msg["type"] == "prompt":
-                from steglib.cli_utils import do_local_prompt
-                ans = do_local_prompt(msg["message"], msg.get("choices"), msg.get("default"), msg.get("multiple"))
-                f.write(json.dumps({"answer": ans}) + "\n")
-                f.flush()
-            elif msg["type"] == "done":
-                return msg.get("result")
-            elif msg["type"] == "error":
-                raise RuntimeError(msg.get("error"))
-            elif msg["type"] == "log":
-                import sys
-                print(msg.get("message"), file=sys.stderr)
+        
+        try:
+            from rich.console import Console
+            console = Console(stderr=True)
+            status = console.status("[bold green]Executing...", spinner="dots")
+            status.start()
+        except ImportError:
+            console = None
+            status = None
+            
+        try:
+            while True:
+                line = f.readline()
+                if not line:
+                    break
+                msg = json.loads(line)
+                if msg["type"] == "prompt":
+                    if status:
+                        status.stop()
+                    if prompt_callback:
+                        ans = prompt_callback(msg)
+                    else:
+                        from steglib.cli_utils import do_local_prompt
+                        ans = do_local_prompt(msg["message"], msg.get("prompt_type", "text"), msg.get("choices"), msg.get("default"), msg.get("multiple"))
+                    f.write(json.dumps({"answer": ans}) + "\n")
+                    f.flush()
+                    if status:
+                        status.start()
+                elif msg["type"] == "done":
+                    return msg.get("result")
+                elif msg["type"] == "error":
+                    raise RuntimeError(msg.get("error"))
+                elif msg["type"] == "log":
+                    if console:
+                        console.print(msg.get("message"))
+                    else:
+                        import sys
+                        print(msg.get("message"), file=sys.stderr)
+        finally:
+            if status:
+                status.stop()

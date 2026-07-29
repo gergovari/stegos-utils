@@ -110,9 +110,32 @@ class ConfigResolver:
         if desc:
             base_prompt += f" ({desc})"
 
+        val_type = prop.get("type", "string")
+        val_format = prop.get("format", "")
+        
+        prompt_type = "text"
+        if val_format == "password":
+            prompt_type = "password"
+        elif val_format == "email":
+            prompt_type = "email"
+        elif val_format == "hostname":
+            prompt_type = "domain"
+        elif val_format == "uri":
+            prompt_type = "url"
+        elif val_type == "boolean":
+            prompt_type = "confirm"
+        elif val_type == "integer":
+            prompt_type = "integer"
+        elif val_type == "number":
+            prompt_type = "number"
+        
+        choices = prop.get("enum")
+        if choices:
+            prompt_type = "select"
+
         while True:
             if self.interactive_cb:
-                val = self.interactive_cb(base_prompt, default=default if default != "" else None)
+                val = self.interactive_cb(base_prompt, prompt_type=prompt_type, choices=choices, default=default if default != "" else None)
                 if (val is None or val == "") and is_req:
                     base_prompt = f"[Required] {key}"
                     continue
@@ -138,7 +161,6 @@ class ConfigResolver:
             if val is None or val == "":
                 break
 
-            val_type = prop.get("type", "string")
             if val is not None:
                 try:
                     if val_type == "integer":
@@ -146,7 +168,8 @@ class ConfigResolver:
                     elif val_type == "number":
                         val = float(val)
                     elif val_type == "boolean":
-                        val = str(val).lower() in ("true", "1", "yes", "y")
+                        if not isinstance(val, bool):
+                            val = str(val).lower() in ("true", "1", "yes", "y")
                 except ValueError:
                     if self.interactive_cb:
                         base_prompt = f"[Invalid type, expected {val_type}] {key}"
