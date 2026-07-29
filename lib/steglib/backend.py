@@ -11,6 +11,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+import json
 from .constants import DOCKER_CACHE_DIR
 
 class BackendBase:
@@ -68,6 +69,47 @@ class DockerComposeBackend(BackendBase):
         """
         return os.path.isfile(os.path.join(backend_dir, "docker-compose.yml"))
     
+    def _get_needed_download_size(self, compose_file: str) -> str | None:
+        """Attempts to calculate the total compressed size of all images in the compose file."""
+        try:
+            # 1. Parse docker-compose config
+            res = run_cmd(["docker", "compose", "-f", compose_file, "config", "--format", "json"], capture_output=True, text=True, check=True)
+            config = json.loads(res.stdout)
+            
+            images = []
+            for svc in config.get("services", {}).values():
+                if "image" in svc:
+                    images.append(svc["image"])
+                    
+            if not images:
+                return None
+                
+            total_bytes = 0
+            env = dict(os.environ)
+            env["DOCKER_CLI_EXPERIMENTAL"] = "enabled"
+            
+            for image in images:
+                # 2. Get manifest
+                m_res = run_cmd(["docker", "manifest", "inspect", "-v", image], env=env, capture_output=True, text=True, check=False)
+                if m_res.returncode == 0:
+                    try:
+                        data = json.loads(m_res.stdout)
+                        if isinstance(data, list):
+                            for m in data:
+                                if m.get("Platform", {}).get("architecture") in ("amd64", "arm64"):
+                                    total_bytes += sum(l.get("Size", l.get("size", 0)) for l in m.get("SchemaV2Manifest", {}).get("layers", []))
+                                    break
+                        elif isinstance(data, dict):
+                            total_bytes += sum(l.get("Size", l.get("size", 0)) for l in data.get("SchemaV2Manifest", {}).get("layers", []))
+                    except json.JSONDecodeError:
+                        pass
+            
+            if total_bytes > 0:
+                return f"{total_bytes / (1024 * 1024):.2f} MB"
+        except Exception:
+            pass
+        return None
+
     def _sync_docker_cache(self, compose_file, action):
         """
         Synchronize docker images with the local group cache to allow offline starts.
@@ -219,7 +261,11 @@ class DockerComposeBackend(BackendBase):
                         needed = needed_match.group(1)
                         friendly_msg = f"Insufficient disk space. Available on group storage: {free_mb:.2f} MB. Needed: {needed}."
                     else:
-                        friendly_msg = f"Insufficient disk space. Available on group storage: {free_mb:.2f} MB."
+                        download_needed = self._get_needed_download_size(compose_file)
+                        if download_needed:
+                            friendly_msg = f"Insufficient disk space. Available on group storage: {free_mb:.2f} MB. Estimated download size: {download_needed}."
+                        else:
+                            friendly_msg = f"Insufficient disk space. Available on group storage: {free_mb:.2f} MB."
                 except Exception:
                     friendly_msg = "Insufficient disk space on device."
                 exc_class = InsufficientSpaceError
