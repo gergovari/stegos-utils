@@ -50,7 +50,10 @@ def handle_stream(rfile, wfile):
         result = dispatcher.dispatch(action, args, interactive_cb, send)
         send({"type": "done", "result": result if result is not None else "Success"})
     except Exception as e:
-        send({"type": "error", "error": str(e)})
+        resp = {"type": "error", "error": str(e)}
+        if hasattr(e, "details"):
+            resp["details"] = e.details
+        send(resp)
     finally:
         root_logger.handlers = old_handlers
 

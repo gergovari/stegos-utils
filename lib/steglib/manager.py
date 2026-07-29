@@ -102,7 +102,7 @@ class PackageManager:
         
         logger.info("Successfully reconfigured %d instance(s) in group '%s'.", count, self.engine.group_name)
 
-    def remove(self, instance_ids, purge=False, cascade=False, interactive_cb=None):
+    def remove(self, instance_ids, purge=False, cascade=False, interactive_cb=None, verbose=False):
         """Removes one or more package instances."""
         real_ids = self.engine.resolve_instances(instance_ids, interactive_cb)
 
@@ -127,7 +127,7 @@ class PackageManager:
 
             if ans.lower() == "y":
                 for dep_id in all_dependents:
-                    self._cascade_remove_integration(dep_id, real_ids)
+                    self._cascade_remove_integration(dep_id, real_ids, verbose=verbose)
             else:
                 raise RuntimeError("Aborting removal due to active dependents.")
 
@@ -136,7 +136,7 @@ class PackageManager:
             try:
                 from steglib.lifecycle import LifecycleManager
                 lm = LifecycleManager(self.engine.group_name)
-                lm.execute("stop", real_id, False, False)
+                lm.execute("stop", real_id, False, verbose)
             except Exception:
                 logger.warning("Failed to stop instance cleanly. Proceeding with removal...")
 
@@ -154,7 +154,7 @@ class PackageManager:
                         os.remove(fpath)
                 logger.info("Uninstalled '%s'. Config and data preserved.", real_id)
 
-    def upgrade(self, instance_ids=None, interactive_cb=None):
+    def upgrade(self, instance_ids=None, interactive_cb=None, verbose=False):
         """Upgrades one or more instances."""
         if instance_ids:
             instances = self.engine.resolve_instances(instance_ids, interactive_cb)
@@ -192,7 +192,7 @@ class PackageManager:
                     logger.info("[%s] Ensuring instance is up to date...", instance_id)
                     from steglib.lifecycle import LifecycleManager
                     lm = LifecycleManager(self.engine.group_name)
-                    res = lm.execute("start", instance_id, True, False)
+                    res = lm.execute("start", instance_id, True, verbose)
                     upgraded_instances.append(instance_id)
                 else:
                     logger.info("[%s] Already up to date.", instance_id)
@@ -322,7 +322,7 @@ class PackageManager:
                     deps.setdefault(provs, []).append(d)
         return deps
 
-    def _cascade_remove_integration(self, dep_id, removed_ids):
+    def _cascade_remove_integration(self, dep_id, removed_ids, verbose=False):
         """Reconfigure a dependent instance to drop integrations to removed IDs."""
         logger.info("[%s] Reconfiguring to remove integrations...", dep_id)
         inst = Instance(self.engine.group_name, dep_id)
@@ -353,6 +353,6 @@ class PackageManager:
                     logger.info("[%s] Restarting...", dep_id)
                     from steglib.lifecycle import LifecycleManager
                     lm = LifecycleManager(self.engine.group_name)
-                    lm.execute("start", dep_id, False, False)
+                    lm.execute("start", dep_id, False, verbose)
                 except Exception:
                     logger.warning("Failed to reconfigure '%s'.", dep_id)

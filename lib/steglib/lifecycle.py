@@ -32,14 +32,13 @@ class LifecycleManager:
         self.group_name = GroupManager.resolve(group_prefix, interactive_cb)
         self.cont_dir = os.path.join(PERSISTENT_DIR, self.group_name)
 
-    def execute(self, action, package_name=None, if_created=False, verbose=False, follow=False):
+    def execute(self, action, package_name=None, if_created=False, follow=False):
         """Execute an action on a specific package or all packages in the group.
 
         Args:
             action (str): The lifecycle action to perform (e.g., start, stop).
             package_name (str, optional): Specific package to target.
             if_created (bool): If True, backend will skip starting uncreated containers.
-            verbose (bool): If True, pass verbose flag down to the backend.
             follow (bool): If True, follow logs.
 
         Raises:
@@ -148,7 +147,7 @@ class LifecycleManager:
             if backend_cls:
                 pkg_path = os.path.join(self.cont_dir, pkg, BACKEND_DIR)
                 backend = backend_cls(pkg, pkg_path, self.cont_dir)
-                res = backend.execute(action, if_created, verbose, follow)
+                res = backend.execute(action, if_created, follow)
                 if res is not None:
                     results[pkg] = res
             else:

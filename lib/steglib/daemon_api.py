@@ -59,7 +59,6 @@ class LifecycleController:
         act = args.get("ctl_action")
         package_name = args.get("package")
         if_created = args.get("if_created", False)
-        verbose = args.get("verbose", False)
         follow = args.get("follow", False)
         
         manager = LifecycleManager(args.get("group"), interactive_cb)
@@ -67,10 +66,10 @@ class LifecycleController:
         def do_execute(pkg):
             try:
                 if act == "restart":
-                    manager.execute("stop", pkg, if_created, verbose, follow=False)
-                    manager.execute("start", pkg, if_created, verbose, follow=False)
+                    manager.execute("stop", pkg, if_created, follow=False)
+                    manager.execute("start", pkg, if_created, follow=False)
                 else:
-                    return manager.execute(act, pkg, if_created, verbose, follow=follow)
+                    return manager.execute(act, pkg, if_created, follow=follow)
             except MultipleInstancesError as e:
                 choices = ["All instances"] + e.instances
                 ans = interactive_cb(f"Multiple instances match '{pkg}'", prompt_type="select", choices=choices, default=None)

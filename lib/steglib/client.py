@@ -130,7 +130,10 @@ class StegClient:
                 elif msg["type"] == "done":
                     return msg.get("result")
                 elif msg["type"] == "error":
-                    raise RuntimeError(msg.get("error"))
+                    err = RuntimeError(msg.get("error"))
+                    if "details" in msg:
+                        err.details = msg["details"]
+                    raise err
                 elif msg["type"] == "log":
                     if console:
                         console.print(msg.get("message"), markup=False)

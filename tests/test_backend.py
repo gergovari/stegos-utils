@@ -214,9 +214,9 @@ def test_execute_unknown(mock_run, mock_isfile):
 @patch("os.path.isfile", return_value=True)
 @patch("os.path.getsize", return_value=100)
 @patch("steglib.backend.run_cmd")
-@patch("steglib.backend.logger.error")
+@patch("steglib.backend.logger.debug")
 @patch("steglib.backend.logger.info")
-def test_execute_subprocess_error(mock_info, mock_error, mock_run, mock_getsize, mock_isfile):
+def test_execute_subprocess_error(mock_info, mock_debug, mock_run, mock_getsize, mock_isfile):
     backend = DockerComposeBackend("pkg1", "/pkg_path", "/group_dir")
     
     def side_effect(*args, **kwargs):
@@ -225,7 +225,7 @@ def test_execute_subprocess_error(mock_info, mock_error, mock_run, mock_getsize,
     
     with pytest.raises(BackendError):
         backend.execute("logs")
-    assert mock_error.called
+    assert mock_debug.called
 
 @patch("os.path.isfile", return_value=True)
 @patch("os.path.getsize", return_value=100)

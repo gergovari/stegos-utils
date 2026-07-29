@@ -70,7 +70,13 @@ def main():
             
         client.call_interactive(f"pkg.{args.command}", args_dict)
     except Exception as e:
-        logging.error(f"Error: {e}")
+        if getattr(e, 'details', None):
+            if args.verbose:
+                logging.error(f"{e}\nDetails:\n{e.details}")
+            else:
+                logging.error(f"{e} (run with --verbose for logs)")
+        else:
+            logging.error(f"{e}")
         sys.exit(1)
 
 if __name__ == "__main__":

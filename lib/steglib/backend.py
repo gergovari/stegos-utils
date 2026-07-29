@@ -114,7 +114,7 @@ class DockerComposeBackend(BackendBase):
                     print(f"Caching image '{image}' to group cache...")
                     run_cmd(["docker", "save", "-o", cache_path, image], logger=logger, error_msg=f"Failed to save image {image} to cache", check=True)
                     
-    def execute(self, action, if_created=False, verbose=False, follow=False):
+    def execute(self, action, if_created=False, follow=False):
         """Execute a docker-compose command (e.g. start, stop, restart, logs, down)."""
         compose_file = os.path.join(self.pkg_path, "docker-compose.yml")
         if not os.path.isfile(compose_file):
@@ -212,7 +212,14 @@ class DockerComposeBackend(BackendBase):
                 try:
                     usage = shutil.disk_usage(self.group_dir)
                     free_mb = usage.free / (1024 * 1024)
-                    friendly_msg = f"Insufficient disk space. Available on group storage: {free_mb:.2f} MB."
+                    
+                    import re
+                    needed_match = re.search(r'needed\s+(\d+\s*[a-zA-Z]*)', details_lower)
+                    if needed_match:
+                        needed = needed_match.group(1)
+                        friendly_msg = f"Insufficient disk space. Available on group storage: {free_mb:.2f} MB. Needed: {needed}."
+                    else:
+                        friendly_msg = f"Insufficient disk space. Available on group storage: {free_mb:.2f} MB."
                 except Exception:
                     friendly_msg = "Insufficient disk space on device."
                 exc_class = InsufficientSpaceError
@@ -224,17 +231,13 @@ class DockerComposeBackend(BackendBase):
                 exc_class = NetworkNotFoundError
                 
             if friendly_msg:
-                if verbose:
-                    err_msg = f"[{self.pkg}] Failed to {action}: {friendly_msg}\nDetails:\n{details}"
-                else:
-                    err_msg = f"[{self.pkg}] Failed to {action}: {friendly_msg} (run with --verbose for logs)"
+                err_msg = f"[{self.pkg}] Failed to {action}: {friendly_msg}"
             else:
-                if verbose:
-                    err_msg = f"[{self.pkg}] Failed to {action}: Docker command failed with exit code {e.returncode}.\nDetails:\n{details}"
-                else:
-                    err_msg = f"[{self.pkg}] Failed to {action}: Docker command failed with exit code {e.returncode}. (run with --verbose for logs)"
+                err_msg = f"[{self.pkg}] Failed to {action}: Docker command failed with exit code {e.returncode}."
             
-            logger.error(err_msg)
+            # Note: We do NOT append details to the message here. The daemon/backend should only provide the structured error.
+            # The client dictates representation based on args.verbose.
+            logger.debug(f"Backend error details: {details}")
             raise exc_class(err_msg, details=details)
         except Exception as e:
             err_msg = f"[{self.pkg}] Failed to {action}: {e}"
