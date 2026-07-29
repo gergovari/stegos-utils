@@ -4,7 +4,7 @@ import os
 import shutil
 import yaml
 
-from .injectors import EnvVarInjector, NetworkInjector
+from .injectors import DockerComposeInjector
 
 class DeployerBase:
     """Abstract base class for package deployers.
@@ -105,43 +105,51 @@ class DockerComposeDeployer(DeployerBase):
 
     def _resolve_exports(self):
         """Resolves configuration exports from consumed capabilities.
-        
+
+        Returns a dict-of-dicts keyed by capability name so that provider
+        injector templates can reference their own capability's exports
+        without collision.
+
         Returns:
-            dict: Resolved export variables.
+            dict: ``{cap_name: {export_key: resolved_value}}``.
         """
-        exports = {}
+        exports_by_cap = {}
         consumes = self.manifest.get("capabilities", {}).get("consumes", [])
         for entry in consumes:
             if not isinstance(entry, dict):
                 continue
-            entry_exports = entry.get("exports", {})
-            for key, value in entry_exports.items():
+            cap_name = entry.get("name", "")
+            if not cap_name:
+                continue
+            cap_exports = {}
+            for key, value in entry.get("exports", {}).items():
                 if isinstance(value, str):
                     tmpl = self.env.from_string(value)
-                    exports[key] = tmpl.render(
+                    cap_exports[key] = tmpl.render(
                         config=self.final_conf,
                         global_config=self.global_conf,
                     )
                 else:
-                    exports[key] = value
-        return exports
+                    cap_exports[key] = value
+            exports_by_cap[cap_name] = cap_exports
+        return exports_by_cap
 
-    def _render_templates(self, cap_manager, exports):
+    def _render_templates(self, cap_manager, exports_by_cap):
         """Renders Jinja2 templates and writes them to the output directory.
-        
+
         Args:
             cap_manager (CapabilityManager): The capability manager.
-            exports (dict): Resolved export variables.
+            exports_by_cap (dict): ``{cap_name: {export_key: value}}``.
         """
         templates = self.config.get("templates", [
             {"src": "docker-compose.yml.j2", "dest": "docker-compose.yml"},
         ])
-        
-        injectors = [
-            EnvVarInjector(self.env),
-            NetworkInjector()
-        ]
-        
+
+        consumes = self.manifest.get("capabilities", {}).get("consumes", [])
+        injector = DockerComposeInjector(
+            self.env, self.global_conf, consumes, self.instance_name,
+        )
+
         for entry in templates:
             src = entry.get("src")
             dest = entry.get("dest")
@@ -166,10 +174,11 @@ class DockerComposeDeployer(DeployerBase):
                     compose_data = yaml.safe_load(rendered)
                     if not isinstance(compose_data, dict):
                         compose_data = {}
-                        
-                    for injector in injectors:
-                        injector.inject(compose_data, cap_manager, exports, self.final_conf)
-                        
+
+                    injector.inject(
+                        compose_data, cap_manager, exports_by_cap, self.final_conf,
+                    )
+
                     rendered = yaml.dump(compose_data, default_flow_style=False, sort_keys=False)
                 except Exception as e:
                     print(f"Warning: Failed to dynamically inject capabilities into {dest}: {e}")

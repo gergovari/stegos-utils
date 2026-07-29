@@ -1,5 +1,6 @@
 import json
 import os
+import secrets as secrets_mod
 import uuid
 import yaml
 
@@ -182,6 +183,12 @@ class PackageEngine:
 
         final_conf["enabled_capabilities"] = enabled_caps
 
+        # Resolve secrets (auto-generate or preserve).
+        generated_secrets = self._resolve_secrets(
+            manifest, pkg_conf, reconfigure, non_interactive, interactive_cb
+        )
+        final_conf.update(generated_secrets)
+
         Instance(self.group_name, instance_name).write_conf(final_conf)
 
         out_dir = os.path.join(self.group_dir, instance_name, BACKEND_DIR)
@@ -328,3 +335,68 @@ class PackageEngine:
                         del enabled[cap_name]
 
         return enabled
+
+    @staticmethod
+    def _generate_secret(secret_type, length):
+        """Generate a secret value based on its type.
+
+        Args:
+            secret_type (str): One of 'password', 'username'.
+            length (int): Desired length / entropy parameter.
+
+        Returns:
+            str: The generated secret value.
+        """
+        if secret_type == "username":
+            return "admin-" + secrets_mod.token_hex(length // 2)
+        # Default to password-style.
+        return secrets_mod.token_urlsafe(length)
+
+    def _resolve_secrets(self, manifest, pkg_conf, reconfigure,
+                         non_interactive, interactive_cb):
+        """Resolve secrets from the manifest, generating or preserving as needed.
+
+        - First install: auto-generate.
+        - Reconfigure (interactive): prompt per-secret whether to regenerate.
+        - Upgrade / non-interactive: always preserve existing.
+
+        Args:
+            manifest (dict): The package manifest.
+            pkg_conf (dict): Existing persisted config for the instance.
+            reconfigure (bool): Whether this is a reconfigure operation.
+            non_interactive (bool): If True, never prompt.
+            interactive_cb: Optional callback for interactive prompts.
+
+        Returns:
+            dict: ``{secret_key: secret_value}`` to merge into final_conf.
+        """
+        secrets_schema = manifest.get("secrets", {})
+        if not secrets_schema:
+            return {}
+
+        result = {}
+        for key, spec in secrets_schema.items():
+            secret_type = spec.get("type", "password")
+            length = spec.get("length", 24)
+            existing = pkg_conf.get(key)
+
+            if existing is not None:
+                if reconfigure and not non_interactive and interactive_cb:
+                    ans = interactive_cb(
+                        f"Regenerate secret '{key}'?",
+                        prompt_type="confirm",
+                        choices=["y", "n"],
+                        default="n",
+                    )
+                    if isinstance(ans, str) and ans.lower() in ("y", "yes"):
+                        result[key] = self._generate_secret(secret_type, length)
+                    else:
+                        result[key] = existing
+                else:
+                    # Non-interactive or not reconfiguring: preserve.
+                    result[key] = existing
+            else:
+                # First install: auto-generate.
+                result[key] = self._generate_secret(secret_type, length)
+
+        return result

@@ -126,3 +126,103 @@ def test_resolve_capabilities(mock_cap, mock_resolve):
     
     enabled = engine._resolve_capabilities(consumes, pkg_conf, False, True, None)
     assert enabled == {}
+
+
+# --- Secrets tests ---
+
+@patch("steglib.engine.GroupManager.resolve", return_value="default")
+@patch("steglib.engine.CapabilityManager")
+def test_resolve_secrets_first_install(mock_cap, mock_resolve, mock_stegos_root):
+    """Secrets are auto-generated on first install (not in pkg_conf)."""
+    engine = PackageEngine()
+    manifest = {
+        "secrets": {
+            "admin_pass": {"type": "password", "length": 16},
+            "admin_user": {"type": "username", "length": 8},
+        }
+    }
+    result = engine._resolve_secrets(manifest, pkg_conf={}, reconfigure=False,
+                                     non_interactive=False, interactive_cb=None)
+    assert "admin_pass" in result
+    assert "admin_user" in result
+    assert len(result["admin_pass"]) > 0
+    assert result["admin_user"].startswith("admin-")
+
+
+@patch("steglib.engine.GroupManager.resolve", return_value="default")
+@patch("steglib.engine.CapabilityManager")
+def test_resolve_secrets_preserved_on_non_interactive(mock_cap, mock_resolve, mock_stegos_root):
+    """Existing secrets are preserved in non-interactive mode."""
+    engine = PackageEngine()
+    manifest = {
+        "secrets": {
+            "admin_pass": {"type": "password", "length": 16},
+        }
+    }
+    pkg_conf = {"admin_pass": "existing-secret-123"}
+    result = engine._resolve_secrets(manifest, pkg_conf, reconfigure=False,
+                                     non_interactive=True, interactive_cb=None)
+    assert result["admin_pass"] == "existing-secret-123"
+
+
+@patch("steglib.engine.GroupManager.resolve", return_value="default")
+@patch("steglib.engine.CapabilityManager")
+def test_resolve_secrets_preserved_on_upgrade(mock_cap, mock_resolve, mock_stegos_root):
+    """Existing secrets are preserved on upgrade (non-interactive, no reconfigure)."""
+    engine = PackageEngine()
+    manifest = {
+        "secrets": {
+            "admin_pass": {"type": "password", "length": 16},
+        }
+    }
+    pkg_conf = {"admin_pass": "keep-me"}
+    result = engine._resolve_secrets(manifest, pkg_conf, reconfigure=False,
+                                     non_interactive=True, interactive_cb=None)
+    assert result["admin_pass"] == "keep-me"
+
+
+@patch("steglib.engine.GroupManager.resolve", return_value="default")
+@patch("steglib.engine.CapabilityManager")
+def test_resolve_secrets_regenerate_on_reconfigure(mock_cap, mock_resolve, mock_stegos_root):
+    """Secrets can be regenerated when user confirms during reconfigure."""
+    engine = PackageEngine()
+    manifest = {
+        "secrets": {
+            "admin_pass": {"type": "password", "length": 16},
+        }
+    }
+    pkg_conf = {"admin_pass": "old-secret"}
+    cb = Mock(return_value="y")
+
+    result = engine._resolve_secrets(manifest, pkg_conf, reconfigure=True,
+                                     non_interactive=False, interactive_cb=cb)
+    assert result["admin_pass"] != "old-secret"
+    cb.assert_called_once()
+
+
+@patch("steglib.engine.GroupManager.resolve", return_value="default")
+@patch("steglib.engine.CapabilityManager")
+def test_resolve_secrets_keep_on_reconfigure_decline(mock_cap, mock_resolve, mock_stegos_root):
+    """Secrets are kept when user declines regeneration during reconfigure."""
+    engine = PackageEngine()
+    manifest = {
+        "secrets": {
+            "admin_pass": {"type": "password", "length": 16},
+        }
+    }
+    pkg_conf = {"admin_pass": "keep-me"}
+    cb = Mock(return_value="n")
+
+    result = engine._resolve_secrets(manifest, pkg_conf, reconfigure=True,
+                                     non_interactive=False, interactive_cb=cb)
+    assert result["admin_pass"] == "keep-me"
+
+
+@patch("steglib.engine.GroupManager.resolve", return_value="default")
+@patch("steglib.engine.CapabilityManager")
+def test_resolve_secrets_no_secrets_field(mock_cap, mock_resolve, mock_stegos_root):
+    """Returns empty dict when manifest has no secrets field."""
+    engine = PackageEngine()
+    result = engine._resolve_secrets({}, pkg_conf={}, reconfigure=False,
+                                     non_interactive=False, interactive_cb=None)
+    assert result == {}
