@@ -74,7 +74,7 @@ def ensure_running(group_dir: str, verbose: bool = False) -> dict:
     if verbose:
         logger.info(f"  └── ⏳ Starting isolated Docker daemon for group: {os.path.basename(group_dir)}...")
     else:
-        logger.info("  └── ⏳ Starting backend daemon...")
+        logger.info("  └── ⏳ Starting backend...")
     
     cmd = [
         "dockerd",
@@ -86,17 +86,23 @@ def ensure_running(group_dir: str, verbose: bool = False) -> dict:
     ]
     cmd.extend(_get_network_params(group_dir))
     
-    # Use shell redirection to absolutely guarantee we capture startup errors like missing binaries or invalid flags
-    cmd_str = " ".join(cmd) + f" > {log_file} 2>&1"
-    subprocess.Popen(cmd_str, shell=True, env=os.environ, preexec_fn=os.setsid)
+    with open(log_file, "w") as f:
+        f.write(f"=== Starting isolated dockerd ===\nCommand: {' '.join(cmd)}\n")
+        f.flush()
+        subprocess.Popen(cmd, stdout=f, stderr=subprocess.STDOUT, env=os.environ, start_new_session=True)
         
     # 5. Wait for it to become responsive
     timeout = 15
+    last_err = ""
     for _ in range(timeout):
         time.sleep(1)
-        res = subprocess.run(["docker", "info"], env=env, capture_output=True)
+        res = subprocess.run(["docker", "info"], env=env, capture_output=True, text=True)
         if res.returncode == 0:
             return env
+        last_err = res.stderr.strip()
             
+    # If we got here, it timed out
     logger.error(f"Failed to start isolated Docker daemon. Check logs at {log_file}")
+    with open(log_file, "a") as f:
+        f.write(f"\n=== docker info failed after {timeout}s ===\n{last_err}\n")
     raise RuntimeError(f"Isolated Docker daemon failed to start for {group_dir}")
