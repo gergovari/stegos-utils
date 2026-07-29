@@ -98,6 +98,8 @@ class DockerComposeBackend(BackendBase):
                         data = json.loads(m_res.stdout)
                         
                         def extract_layers_size(obj):
+                            if "layers" in obj:
+                                return sum(l.get("Size", l.get("size", 0)) for l in obj["layers"]), True
                             for v in obj.values():
                                 if isinstance(v, dict) and "layers" in v:
                                     return sum(l.get("Size", l.get("size", 0)) for l in v["layers"]), True
