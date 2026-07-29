@@ -299,8 +299,9 @@ class PackageEngine:
         else:
             enabled = dict(raw)
 
-        if non_interactive:
-            return enabled
+        if pkg_conf and "enabled_capabilities" in pkg_conf:
+            raw = pkg_conf["enabled_capabilities"]
+            enabled = dict(raw)
 
         for cap_name, cap_rules in consumes.items():
             providers = self.cap_manager.get_providers(cap_name)
@@ -313,14 +314,16 @@ class PackageEngine:
             default_sel = []
             if cap_name in enabled:
                 default_sel = enabled[cap_name]
-            if not default_sel and not pkg_conf:
+            if not default_sel: # Auto-resolve if not currently enabled
                 if not (max_provs and max_provs < len(prov_list)):
                     if prov_list:
                         default_sel = [prov_list[0]]
             
-            if not (reconfigure or not pkg_conf):
+            if non_interactive:
+                if default_sel:
+                    enabled[cap_name] = default_sel
                 continue
-
+            
             if interactive_cb:
                 msg = f"Integration available: '{cap_name}'. Available providers: {prov_list}."
                 if max_provs:

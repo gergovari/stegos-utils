@@ -125,7 +125,7 @@ def test_resolve_capabilities(mock_cap, mock_resolve):
     pkg_conf = {}
     
     enabled = engine._resolve_capabilities(consumes, pkg_conf, False, True, None)
-    assert enabled == {}
+    assert enabled == {'cap1': ['prov1']}
 
 
 # --- Secrets tests ---

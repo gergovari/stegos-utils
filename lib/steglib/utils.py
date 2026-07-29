@@ -33,3 +33,20 @@ def run_cmd(cmd, logger, error_msg=None, **kwargs):
             )
             
     return result
+
+def hash_dir(directory):
+    """Computes an MD5 hash of all file contents in a directory recursively."""
+    import hashlib
+    import os
+    if not os.path.isdir(directory):
+        return ""
+    hasher = hashlib.md5()
+    for root, _, files in os.walk(directory):
+        for f in sorted(files):
+            fpath = os.path.join(root, f)
+            try:
+                with open(fpath, "rb") as fp:
+                    hasher.update(fp.read())
+            except OSError:
+                pass
+    return hasher.hexdigest()

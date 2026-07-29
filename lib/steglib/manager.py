@@ -90,9 +90,9 @@ class PackageManager:
                 continue
             try:
                 pkg_dir = self.engine.find_package_dir(pkg_name)
-                is_interactive = bool(instance_ids) and not interactive_cb
+                is_interactive = bool(interactive_cb)
                 self.engine.process_package(
-                    pkg_dir, cli_conf={}, reconfigure=is_interactive,
+                    pkg_dir, cli_conf={}, reconfigure=True,
                     non_interactive=not is_interactive, instance_id=instance_id,
                     interactive_cb=interactive_cb
                 )
@@ -170,16 +170,30 @@ class PackageManager:
             if not pkg_name:
                 continue
             try:
+                from steglib.constants import BACKEND_DIR
+                from steglib.utils import hash_dir
+                
+                backend_dir = os.path.join(self.engine.group_dir, instance_id, BACKEND_DIR)
+                before_hash = hash_dir(backend_dir)
+                
                 pkg_dir = self.engine.find_package_dir(pkg_name)
+                is_interactive = bool(interactive_cb)
                 self.engine.process_package(
                     pkg_dir, cli_conf={}, reconfigure=False,
-                    non_interactive=True, instance_id=instance_id,
+                    non_interactive=not is_interactive, instance_id=instance_id,
+                    interactive_cb=interactive_cb
                 )
-                logger.info("[%s] Ensuring instance is up to date...", instance_id)
-                from steglib.lifecycle import LifecycleManager
-                lm = LifecycleManager(self.engine.group_name)
-                res = lm.execute("start", instance_id, True, False)
-                upgraded_instances.append(instance_id)
+                
+                after_hash = hash_dir(backend_dir)
+                
+                if before_hash != after_hash:
+                    logger.info("[%s] Ensuring instance is up to date...", instance_id)
+                    from steglib.lifecycle import LifecycleManager
+                    lm = LifecycleManager(self.engine.group_name)
+                    res = lm.execute("start", instance_id, True, False)
+                    upgraded_instances.append(instance_id)
+                else:
+                    logger.info("[%s] Already up to date.", instance_id)
             except Exception as exc:
                 logger.warning("Could not upgrade '%s' (instance '%s'): %s", pkg_name, instance_id, exc)
 

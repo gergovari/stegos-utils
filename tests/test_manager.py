@@ -156,11 +156,12 @@ def test_remove_purge(mock_rmtree, mock_exists, mock_lm):
     manager.remove(["inst1"], purge=True)
     mock_rmtree.assert_called_once_with("/group/inst1")
 
+@patch("steglib.utils.hash_dir", side_effect=["hash1", "hash2"])
 @patch("steglib.manager.os.listdir")
 @patch("steglib.manager.os.path.isdir", return_value=True)
 @patch("steglib.manager.Instance")
 @patch("steglib.lifecycle.LifecycleManager")
-def test_upgrade(mock_lm, mock_instance, mock_isdir, mock_listdir):
+def test_upgrade(mock_lm, mock_instance, mock_isdir, mock_listdir, mock_hash):
     engine_mock = Mock()
     engine_mock.group_name = "default"
     engine_mock.group_dir = "/group"
