@@ -17,7 +17,7 @@ def _get_network_params(group_dir: str) -> list:
     
     return [
         f"--bip={bip}",
-        f"--default-address-pool=base={pool_base},size=24"
+        "--default-address-pool", f"base={pool_base},size=24"
     ]
 
 def get_docker_env(group_dir: str) -> dict:
@@ -29,7 +29,7 @@ def get_docker_env(group_dir: str) -> dict:
     env["DOCKER_HOST"] = f"unix://{sock_file}"
     return env
 
-def ensure_running(group_dir: str) -> dict:
+def ensure_running(group_dir: str, verbose: bool = False) -> dict:
     """Ensures the isolated docker daemon for this group is running.
     Returns the environment dict with DOCKER_HOST set.
     """
@@ -71,7 +71,10 @@ def ensure_running(group_dir: str) -> dict:
             pass
             
     # 3. Start the isolated daemon
-    logger.info(f"Starting isolated Docker daemon for group: {os.path.basename(group_dir)}")
+    if verbose:
+        logger.info(f"  └── ⏳ Starting isolated Docker daemon for group: {os.path.basename(group_dir)}...")
+    else:
+        logger.info("  └── ⏳ Starting backend daemon...")
     
     cmd = [
         "dockerd",
@@ -83,8 +86,9 @@ def ensure_running(group_dir: str) -> dict:
     ]
     cmd.extend(_get_network_params(group_dir))
     
-    with open(log_file, "a") as f:
-        subprocess.Popen(cmd, stdout=f, stderr=f, env=os.environ, preexec_fn=os.setsid)
+    # Use shell redirection to absolutely guarantee we capture startup errors like missing binaries or invalid flags
+    cmd_str = " ".join(cmd) + f" > {log_file} 2>&1"
+    subprocess.Popen(cmd_str, shell=True, env=os.environ, preexec_fn=os.setsid)
         
     # 5. Wait for it to become responsive
     timeout = 15

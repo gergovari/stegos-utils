@@ -70,7 +70,7 @@ class DockerComposeBackend(BackendBase):
         """
         return os.path.isfile(os.path.join(backend_dir, "docker-compose.yml"))
     
-    def _get_needed_download_size(self, compose_file: str) -> str | None:
+    def _get_needed_download_size(self, compose_file: str, verbose: bool = False) -> str | None:
         """Attempts to calculate the total compressed size of all images in the compose file."""
         try:
             # 1. Parse docker-compose config
@@ -89,7 +89,7 @@ class DockerComposeBackend(BackendBase):
                 
             total_bytes = 0
             try:
-                env = ensure_running(self.group_dir)
+                env = ensure_running(self.group_dir, verbose)
             except Exception as e:
                 logger.error(f"Failed to ensure isolated dockerd is running: {e}")
                 env = dict(os.environ)
@@ -182,7 +182,7 @@ class DockerComposeBackend(BackendBase):
                     print(f"Caching image '{image}' to group cache...")
                     run_cmd(["docker", "save", "-o", cache_path, image], env=env, logger=logger, error_msg=f"Failed to save image {image} to cache", check=True)
                     
-    def execute(self, action, if_created=False, follow=False):
+    def execute(self, action, if_created=False, verbose=False, follow=False):
         """Execute a docker-compose command (e.g. start, stop, restart, logs, down)."""
         compose_file = os.path.join(self.pkg_path, "docker-compose.yml")
         if not os.path.isfile(compose_file):
@@ -190,7 +190,7 @@ class DockerComposeBackend(BackendBase):
             return
         # Ensure isolated daemon is running
         try:
-            env = ensure_running(self.group_dir)
+            env = ensure_running(self.group_dir, verbose)
         except Exception as e:
             logger.error(f"[{self.pkg}] {e}")
             return
@@ -293,7 +293,7 @@ class DockerComposeBackend(BackendBase):
                         needed = needed_match.group(1)
                         friendly_msg = f"Insufficient disk space. Available on group storage: {free_mb:.2f} MB. Needed: {needed}."
                     else:
-                        download_needed = self._get_needed_download_size(compose_file)
+                        download_needed = self._get_needed_download_size(compose_file, verbose)
                         if download_needed:
                             friendly_msg = f"Insufficient disk space. Available on group storage: {free_mb:.2f} MB. Estimated download size: {download_needed}."
                         else:
