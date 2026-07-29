@@ -125,9 +125,14 @@ class DockerComposeDeployer(DeployerBase):
             for key, value in entry.get("exports", {}).items():
                 if isinstance(value, str):
                     tmpl = self.env.from_string(value)
+                    stegos_env = {
+                        "group_name": self.group_name,
+                        "docker_sock": f"/stegos/persistent/{self.group_name}/backend/dockerd/docker.sock"
+                    }
                     cap_exports[key] = tmpl.render(
                         config=self.final_conf,
                         global_config=self.global_conf,
+                        stegos=stegos_env,
                     )
                 else:
                     cap_exports[key] = value
@@ -164,9 +169,14 @@ class DockerComposeDeployer(DeployerBase):
                 content = fh.read()
 
             tmpl = self.env.from_string(content)
+            stegos_env = {
+                "group_name": self.group_name,
+                "docker_sock": f"/stegos/persistent/{self.group_name}/backend/dockerd/docker.sock"
+            }
             rendered = tmpl.render(
                 config=self.final_conf,
                 global_config=self.global_conf,
+                stegos=stegos_env,
             )
 
             if dest == "docker-compose.yml":
