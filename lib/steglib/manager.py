@@ -4,6 +4,7 @@ import os
 import re
 import shutil
 import subprocess
+from steglib.utils import run_cmd
 
 from steglib.constants import BACKEND_DIR, GLOBAL_CONF_FILENAME
 from steglib.engine import PackageNotFoundError
@@ -197,17 +198,17 @@ class PackageManager:
                 continue
             logger.info("[%s] Pulling from remote...", name)
             try:
-                subprocess.run(
+                run_cmd(
                     ["git", "config", "--global", "--add", "safe.directory", repo_path],
-                    check=True, capture_output=True,
+                    logger=logger, error_msg=f"Failed to configure safe.directory for '{name}'.", check=True
                 )
-                subprocess.run(
+                run_cmd(
                     ["git", "pull", "--rebase", "--autostash"],
-                    cwd=repo_path, check=True,
+                    logger=logger, cwd=repo_path, error_msg=f"Failed to update '{name}'.", check=True
                 )
                 count += 1
-            except subprocess.CalledProcessError:
-                logger.warning("Failed to update '%s'.", name)
+            except Exception:
+                pass
         logger.info("Updated %d repository(ies).", count)
 
     def list_packages(self):

@@ -1,5 +1,5 @@
 import os
-import subprocess
+from steglib.utils import run_cmd
 import logging
 from typing import Optional
 from steglib.constants import TARGET_FOLDERS
@@ -105,10 +105,10 @@ class DriveMapper:
             return
 
         try:
-            subprocess.run(["mount", "--bind", src_dir, target_mnt], check=True)
+            run_cmd(["mount", "--bind", src_dir, target_mnt], logger=logger, error_msg=f"Failed to bind mount {src_dir} to {target_mnt}", check=True)
             logger.info("Bind mounted: %s", target_mnt)
-        except subprocess.CalledProcessError as e:
-            logger.error("Failed to bind mount %s to %s: %s", src_dir, target_mnt, e)
+        except Exception:
+            pass
 
     def mount_all(self) -> None:
         """Discovers and mounts all stegOS-labeled devices."""
@@ -121,17 +121,17 @@ class DriveMapper:
             if self.selinux_tmpfs_ctx:
                 mount_opts += f",{self.selinux_tmpfs_ctx}"
             try:
-                subprocess.run(["mount", "-t", "tmpfs", "-o", mount_opts, "tmpfs", self.root_dir], check=True)
-                subprocess.run(["mount", "--make-shared", self.root_dir], check=True)
-            except subprocess.CalledProcessError as e:
+                run_cmd(["mount", "-t", "tmpfs", "-o", mount_opts, "tmpfs", self.root_dir], logger=logger, error_msg=f"Failed to establish tmpfs on {self.root_dir}", check=True)
+                run_cmd(["mount", "--make-shared", self.root_dir], logger=logger, error_msg=f"Failed to make shared {self.root_dir}", check=True)
+            except Exception as e:
                 raise RuntimeError(f"Failed to establish tmpfs on {self.root_dir}: {e}")
 
         os.makedirs(self.base_mnt_root, exist_ok=True)
 
         # Discover devices using blkid
         try:
-            res = subprocess.run(["blkid"], capture_output=True, text=True, check=True)
-        except subprocess.CalledProcessError as e:
+            res = run_cmd(["blkid"], logger=logger, check=True)
+        except Exception as e:
             logger.error("Failed to run blkid: %s", e)
             return
 
@@ -175,8 +175,8 @@ class DriveMapper:
                 if self.selinux_drive_ctx:
                     drive_opts += f",{self.selinux_drive_ctx}"
                 try:
-                    subprocess.run(["mount", "-o", drive_opts, dev_path, base_mnt], check=True)
-                except subprocess.CalledProcessError as e:
+                    run_cmd(["mount", "-o", drive_opts, dev_path, base_mnt], logger=logger, error_msg=f"Failed to mount {dev_path} to {base_mnt}", check=True)
+                except Exception as e:
                     logger.error("Failed to mount physical device %s. Skipping.", dev_path)
                     continue
 
@@ -245,7 +245,7 @@ class DriveMapper:
 
         for target in mounts_to_remove:
             try:
-                subprocess.run(["umount", target], check=True)
+                run_cmd(["umount", target], logger=logger, error_msg=f"Failed to unmount {target}", check=True)
                 logger.info("Unmounted: %s", target)
-            except subprocess.CalledProcessError:
+            except Exception:
                 logger.warning("Target busy: %s", target)

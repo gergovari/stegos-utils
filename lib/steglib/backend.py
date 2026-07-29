@@ -2,8 +2,11 @@
 
 import os
 import yaml
-import subprocess
+from steglib.utils import run_cmd
 import hashlib
+import logging
+
+logger = logging.getLogger(__name__)
 
 from .constants import DOCKER_CACHE_DIR
 
@@ -92,17 +95,17 @@ class DockerComposeBackend(BackendBase):
                 safe_name = hashlib.md5(image.encode()).hexdigest() + ".tar"
                 cache_path = os.path.join(cache_dir, safe_name)
                 if os.path.isfile(cache_path):
-                    check = subprocess.run(["docker", "image", "inspect", image], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                    check = run_cmd(["docker", "image", "inspect", image], logger=logger, check=False)
                     if check.returncode != 0:
                         print(f"Loading cached image '{image}' from group cache...")
-                        subprocess.run(["docker", "load", "-i", cache_path])
+                        run_cmd(["docker", "load", "-i", cache_path], logger=logger, error_msg=f"Failed to load image from cache: {cache_path}", check=True)
         elif action == "post-start":
             for image in images:
                 safe_name = hashlib.md5(image.encode()).hexdigest() + ".tar"
                 cache_path = os.path.join(cache_dir, safe_name)
                 if not os.path.isfile(cache_path):
                     print(f"Caching image '{image}' to group cache...")
-                    subprocess.run(["docker", "save", "-o", cache_path, image])
+                    run_cmd(["docker", "save", "-o", cache_path, image], logger=logger, error_msg=f"Failed to save image {image} to cache", check=True)
                     
     def execute(self, action, if_created=False, verbose=False):
         """
@@ -124,17 +127,17 @@ class DockerComposeBackend(BackendBase):
                 # Check if the service has any containers; if not, skip starting
                 check_cmd = cmd + ["ps", "-q", "-a"]
                 try:
-                    result = subprocess.run(check_cmd, capture_output=True, text=True, check=True)
+                    result = run_cmd(check_cmd, logger=logger, check=True)
                     if not result.stdout.strip():
                         return
-                except subprocess.CalledProcessError:
+                except Exception:
                     pass
             
             self._sync_docker_cache(compose_file, "pre-start")
             
             # Apply SELinux context so the Docker daemon can access the files
             try:
-                subprocess.run(["chcon", "-R", "-t", "container_file_t", self.pkg_path], check=False, capture_output=True)
+                run_cmd(["chcon", "-R", "-t", "container_file_t", self.pkg_path], logger=logger, check=False)
             except Exception:
                 pass
                 
@@ -143,11 +146,11 @@ class DockerComposeBackend(BackendBase):
             # Check if the service has any containers; if not, skip stopping
             check_cmd = cmd + ["ps", "-q", "-a"]
             try:
-                result = subprocess.run(check_cmd, capture_output=True, text=True, check=True)
+                result = run_cmd(check_cmd, logger=logger, check=True)
                 if not result.stdout.strip():
                     # No containers exist, nothing to stop
                     return
-            except subprocess.CalledProcessError:
+            except Exception:
                 pass # If check fails, fall through to down just in case
             
             cmd.append("down")
@@ -162,17 +165,17 @@ class DockerComposeBackend(BackendBase):
         try:
             if action == "start":
                 print(f"[{self.pkg}] Starting package...")
-                result = subprocess.run(cmd, check=True, capture_output=not verbose, text=not verbose)
+                run_cmd(cmd, logger=logger, error_msg="Docker command failed.", check=True)
                 self._sync_docker_cache(compose_file, "post-start")
             elif action == "stop":
                 print(f"[{self.pkg}] Stopping package...")
-                result = subprocess.run(cmd, check=True, capture_output=not verbose, text=not verbose)
+                run_cmd(cmd, logger=logger, error_msg="Docker command failed.", check=True)
             elif action == "status":
                 if verbose:
-                    subprocess.run(cmd + ["ps"], check=True)
+                    run_cmd(cmd + ["ps"], logger=logger, check=True)
                 else:
-                    all_ctrs = subprocess.run(cmd + ["ps", "-q", "-a"], capture_output=True, text=True, check=False).stdout.splitlines()
-                    running_ctrs = subprocess.run(cmd + ["ps", "-q", "--status=running"], capture_output=True, text=True, check=False).stdout.splitlines()
+                    all_ctrs = run_cmd(cmd + ["ps", "-q", "-a"], logger=logger, check=False).stdout.splitlines()
+                    running_ctrs = run_cmd(cmd + ["ps", "-q", "--status=running"], logger=logger, check=False).stdout.splitlines()
                     
                     if not all_ctrs:
                         print(f"[{self.pkg}] Status: Stopped")
@@ -182,16 +185,8 @@ class DockerComposeBackend(BackendBase):
                         print(f"[{self.pkg}] Status: Degraded ({len(running_ctrs)}/{len(all_ctrs)} containers running)")
             else:
                 # For logs, we let the output flow to the user
-                subprocess.run(cmd, check=True)
-        except subprocess.CalledProcessError as e:
-            print(f"[{self.pkg}] Error during {action}:")
-            if not verbose:
-                if e.stderr:
-                    print(e.stderr.strip())
-                elif e.stdout:
-                    print(e.stdout.strip())
-            print(f"[{self.pkg}] Command failed with code {e.returncode}")
-        except (FileNotFoundError, OSError) as e:
+                run_cmd(cmd, logger=logger, capture_output=False, text=False, check=True)
+        except Exception as e:
             print(f"[{self.pkg}] Error during {action}: {e}")
 
 BACKENDS = {

@@ -2,12 +2,11 @@ import json
 import logging
 import os
 import pwd
-import re
-import subprocess
 import tempfile
 import time
 
 from steglib.constants import LABEL_PREFIX, TARGET_FOLDERS, GLOBAL_CONF_FILENAME
+from steglib.utils import run_cmd
 
 logger = logging.getLogger(__name__)
 
@@ -43,17 +42,16 @@ class GroupInitializer:
             RuntimeError: If the 'blkid' command is not found.
         """
         try:
-            result = subprocess.run(
+            result = run_cmd(
                 ["blkid", "-o", "value", "-s", "TYPE", device],
+                logger=logger,
                 capture_output=True,
                 text=True,
                 check=True
             )
             return result.stdout.strip()
-        except subprocess.CalledProcessError:
+        except Exception:
             return ""
-        except FileNotFoundError:
-            raise RuntimeError("'blkid' command not found.")
 
     def check_if_mounted(self, device: str) -> bool:
         """Checks if a given block device is currently mounted.
@@ -98,6 +96,7 @@ class GroupInitializer:
         if not self.is_root():
             raise PermissionError("Root privileges are required to mount and format drives.")
 
+        import re
         if not re.match(r"^[a-zA-Z0-9.\-_]+$", group_name):
             raise ValueError("Group name can only contain alphanumeric characters, dots, dashes, and underscores.")
 
@@ -119,18 +118,16 @@ class GroupInitializer:
         logger.info("Formatting %s as ext4...", device)
         label = f"{LABEL_PREFIX}.{group_name}"
         try:
-            subprocess.run(["mkfs.ext4", "-F", "-L", label, "-q", device], check=True)
+            run_cmd(["mkfs.ext4", "-F", "-L", label, "-q", device], logger=logger, error_msg=f"Failed to format logical volume '{device}' as ext4.", check=True)
             logger.info("Successfully formatted with label: %s", label)
-        except subprocess.CalledProcessError as e:
-            raise RuntimeError(f"Formatting failed with exit code {e.returncode}")
-        except FileNotFoundError:
-            raise RuntimeError("'mkfs.ext4' command not found.")
+        except Exception as e:
+            raise RuntimeError(f"Failed to format logical volume '{device}' as ext4. See logs for details.") from e
 
         # Temporarily mount to seed folders
         tmp_mnt = tempfile.mkdtemp(prefix="steggroup_")
         logger.info("Mounting temporarily to %s to seed folders...", tmp_mnt)
         try:
-            subprocess.run(["mount", device, tmp_mnt], check=True)
+            run_cmd(["mount", device, tmp_mnt], logger=logger, error_msg=f"Failed to mount logical volume '{device}' to '{tmp_mnt}'.", check=True)
 
             # Create required folders
             for folder in TARGET_FOLDERS:
@@ -168,17 +165,15 @@ class GroupInitializer:
             except KeyError:
                 logger.warning("'steguser' not found on this system. Ownership left as root.")
 
-        except subprocess.CalledProcessError as e:
-            raise RuntimeError(f"Mounting failed with exit code {e.returncode}")
-        except OSError as e:
-            raise RuntimeError(f"Filesystem operation failed: {e}")
+        except Exception as e:
+            logger.warning("Failed to initialize logical volume '%s'. It may need to be cleaned up manually.", device)
+            raise RuntimeError(f"Failed to initialize logical volume '{device}'. See logs for details.") from e
         finally:
             logger.info("Unmounting...")
-            for _ in range(3):
-                result = subprocess.run(["umount", tmp_mnt])
-                if result.returncode == 0:
-                    break
-                time.sleep(1)
+            try:
+                run_cmd(["umount", tmp_mnt], logger=logger, check=True)
+            except Exception:
+                pass
             try:
                 os.rmdir(tmp_mnt)
             except OSError:

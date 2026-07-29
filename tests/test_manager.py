@@ -179,7 +179,7 @@ def test_upgrade(mock_lm, mock_instance, mock_isdir, mock_listdir):
 
 @patch("steglib.manager.os.listdir", return_value=["repo1"])
 @patch("steglib.manager.os.path.isdir", return_value=True)
-@patch("steglib.manager.subprocess.run")
+@patch("steglib.manager.run_cmd")
 def test_update(mock_run, mock_isdir, mock_listdir):
     engine_mock = Mock()
     engine_mock.repo_dir = "/repos"

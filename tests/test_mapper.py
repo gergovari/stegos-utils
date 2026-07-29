@@ -57,7 +57,7 @@ def test_unmount_all(mock_subprocess, mock_stegos_root):
         
     assert mock_subprocess.call_count == 2
 
-@patch("steglib.mapper.subprocess.run")
+@patch("steglib.mapper.run_cmd")
 @patch("steglib.mapper.os.makedirs")
 @patch.object(DriveMapper, "_is_mounted", side_effect=[False, False])
 @patch.object(DriveMapper, "_setup_bind_mount")
@@ -79,7 +79,7 @@ def test_mount_all_structure_a(mock_listdir, mock_isdir, mock_setup_bind, mock_i
     
     mock_setup_bind.assert_any_call(os.path.join(mapper.base_mnt_root, "12345678-abcd", "repos"), "sys_12345678", "repos")
 
-@patch("steglib.mapper.subprocess.run")
+@patch("steglib.mapper.run_cmd")
 @patch("steglib.mapper.os.makedirs")
 @patch.object(DriveMapper, "_is_mounted", side_effect=[False, False])
 @patch.object(DriveMapper, "_setup_bind_mount")
