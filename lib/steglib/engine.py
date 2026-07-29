@@ -158,7 +158,7 @@ class PackageEngine:
         consumes = parse_consumes(manifest)
 
         enabled_caps = self._resolve_capabilities(
-            consumes, pkg_conf, reconfigure, non_interactive, interactive_cb
+            instance_name, consumes, pkg_conf, reconfigure, non_interactive, interactive_cb
         )
 
         config_schema = dict(manifest.get("config_schema", {}))
@@ -292,7 +292,7 @@ class PackageEngine:
 
         return f"{pkg_name}-{uuid.uuid4().hex[:8]}"
 
-    def _resolve_capabilities(self, consumes, pkg_conf, reconfigure, non_interactive, interactive_cb):
+    def _resolve_capabilities(self, instance_name, consumes, pkg_conf, reconfigure, non_interactive, interactive_cb):
         raw = pkg_conf.get("enabled_capabilities", {})
         if isinstance(raw, list):
             enabled = {cap: list(self.cap_manager.get_providers(cap).keys()) for cap in raw}
@@ -325,7 +325,7 @@ class PackageEngine:
                 continue
             
             if interactive_cb:
-                msg = f"Integration available: '{cap_name}'. Available providers: {prov_list}."
+                msg = f"[{instance_name}] Integration available: '{cap_name}'. Available providers: {prov_list}."
                 if max_provs:
                     msg += f" (Max {max_provs})"
                 ans_list = interactive_cb(msg, prompt_type="multiselect", choices=prov_list, default=",".join(default_sel), multiple=True)

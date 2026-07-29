@@ -178,6 +178,8 @@ class PackageManager:
                 
                 pkg_dir = self.engine.find_package_dir(pkg_name)
                 is_interactive = bool(interactive_cb)
+                
+                logger.info("[%s] Checking for upgrades/integrations...", instance_id)
                 self.engine.process_package(
                     pkg_dir, cli_conf={}, reconfigure=False,
                     non_interactive=not is_interactive, instance_id=instance_id,

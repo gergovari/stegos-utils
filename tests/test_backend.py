@@ -222,7 +222,8 @@ def test_execute_subprocess_error(mock_info, mock_error, mock_run, mock_getsize,
         raise subprocess.CalledProcessError(1, cmd=args[0], stderr="some error")
     mock_run.side_effect = side_effect
     
-    backend.execute("logs")
+    with pytest.raises(RuntimeError):
+        backend.execute("logs")
     assert mock_error.called
 
 @patch("os.path.isfile", return_value=True)
@@ -233,5 +234,6 @@ def test_execute_subprocess_error(mock_info, mock_error, mock_run, mock_getsize,
 def test_execute_oserror(mock_info, mock_error, mock_run, mock_getsize, mock_isfile):
     backend = DockerComposeBackend("pkg1", "/pkg_path", "/group_dir")
     mock_run.side_effect = OSError("os error")
-    backend.execute("logs")
+    with pytest.raises(RuntimeError):
+        backend.execute("logs")
     mock_error.assert_any_call("[pkg1] Error during logs: os error")

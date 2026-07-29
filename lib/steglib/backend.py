@@ -202,6 +202,7 @@ class DockerComposeBackend(BackendBase):
                         logger.error(res.stderr.strip())
         except Exception as e:
             logger.error(f"[{self.pkg}] Error during {action}: {e}")
+            raise RuntimeError(f"[{self.pkg}] Failed to {action}: {e}")
 
 BACKENDS = {
     "docker-compose": DockerComposeBackend,

@@ -124,7 +124,7 @@ def test_resolve_capabilities(mock_cap, mock_resolve):
     consumes = {"cap1": {}}
     pkg_conf = {}
     
-    enabled = engine._resolve_capabilities(consumes, pkg_conf, False, True, None)
+    enabled = engine._resolve_capabilities("test-instance", consumes, pkg_conf, False, True, None)
     assert enabled == {'cap1': ['prov1']}
 
 
