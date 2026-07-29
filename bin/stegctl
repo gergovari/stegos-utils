@@ -22,7 +22,10 @@ def main():
     
     actions = ["start", "stop", "restart", "status", "logs"]
     for act in actions:
-        p = subparsers.add_parser(act, help=f"{act.capitalize()} package(s)")
+        kwargs = {"help": f"{act.capitalize()} package(s)"}
+        if act == "logs":
+            kwargs["aliases"] = ["log"]
+        p = subparsers.add_parser(act, **kwargs)
         p.add_argument("package", nargs="?", help="Specific package to perform action on (defaults to all)")
         p.add_argument("--group", help="Target group (optional if only one exists)")
         p.add_argument("--if-created", action="store_true", help=argparse.SUPPRESS)
@@ -34,13 +37,18 @@ def main():
     
     client = StegClient(url=args.daemon_url)
     try:
+        action = "logs" if args.action == "log" else args.action
         client.call_interactive("ctl.execute", {
-            "ctl_action": args.action,
+            "ctl_action": action,
             "package": args.package,
             "group": args.group,
             "if_created": args.if_created,
             "verbose": args.verbose
         })
+        
+        if action in ["start", "stop", "restart"]:
+            pkg_str = f"'{args.package}'" if args.package else "all packages"
+            print(f"\n[+] Successfully executed '{action}' on {pkg_str}.")
     except Exception as e:
         logging.error(f"Error: {e}")
         sys.exit(1)
