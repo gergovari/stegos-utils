@@ -5,3 +5,5 @@ pytest-cov==7.1.0
 PyYAML
 jsonschema
 Jinja2
+rich
+questionary

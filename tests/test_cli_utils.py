@@ -8,52 +8,58 @@ def test_do_local_prompt_not_tty():
         assert do_local_prompt("Message", default="def") == "def"
 
 @patch("sys.stdin.isatty", return_value=True)
-@patch("builtins.input")
-def test_do_local_prompt_multiple(mock_input, mock_tty):
-    mock_input.return_value = "a, b, c"
+@patch("questionary.checkbox")
+@patch("questionary.text")
+def test_do_local_prompt_multiple(mock_text, mock_checkbox, mock_tty):
+    # Test fallback text (no choices)
+    mock_text_inst = MagicMock()
+    mock_text.return_value = mock_text_inst
+    mock_text_inst.ask.return_value = "a, b, c"
     assert do_local_prompt("Msg", multiple=True) == ["a", "b", "c"]
     
-    mock_input.return_value = ""
-    assert do_local_prompt("Msg", multiple=True, default="def") == ["def"]
+    # Test fallback empty
+    mock_text_inst.ask.return_value = ""
+    assert do_local_prompt("Msg", multiple=True, default="def, xyz") == ["def", "xyz"]
+
+    # Test checkbox (with choices)
+    mock_chk_inst = MagicMock()
+    mock_checkbox.return_value = mock_chk_inst
+    mock_chk_inst.ask.return_value = ["A", "B"]
+    assert do_local_prompt("Msg", choices=["A", "B"], multiple=True) == ["A", "B"]
 
 @patch("sys.stdin.isatty", return_value=True)
-@patch("builtins.input")
-def test_do_local_prompt_choices(mock_input, mock_tty):
-    # Test valid numeric choice
-    mock_input.side_effect = ["1"]
+@patch("questionary.select")
+def test_do_local_prompt_choices(mock_select, mock_tty):
+    mock_inst = MagicMock()
+    mock_select.return_value = mock_inst
+    
+    mock_inst.ask.return_value = "A"
     assert do_local_prompt("Msg", choices=["A", "B"]) == "A"
     
-    # Test valid string choice
-    mock_input.side_effect = ["B"]
-    assert do_local_prompt("Msg", choices=["A", "B"]) == "B"
-    
-    # Test default
-    mock_input.side_effect = [""]
+    mock_inst.ask.return_value = None
     assert do_local_prompt("Msg", choices=["A", "B"], default="B") == "B"
-    
-    # Test invalid then valid
-    mock_input.side_effect = ["invalid", "2"]
-    assert do_local_prompt("Msg", choices=["A", "B"]) == "B"
 
 @patch("sys.stdin.isatty", return_value=True)
-@patch("builtins.input")
-def test_do_local_prompt_simple(mock_input, mock_tty):
-    mock_input.return_value = "hello"
+@patch("questionary.text")
+def test_do_local_prompt_simple(mock_text, mock_tty):
+    mock_inst = MagicMock()
+    mock_text.return_value = mock_inst
+    
+    mock_inst.ask.return_value = "hello"
     assert do_local_prompt("Msg") == "hello"
     
-    mock_input.return_value = ""
+    mock_inst.ask.return_value = None
     assert do_local_prompt("Msg", default="world") == "world"
 
 @patch("sys.stdin.isatty", return_value=True)
-@patch("builtins.input")
-def test_do_local_prompt_eof(mock_input, mock_tty):
-    # Test that EOFError acts like an empty input (accepts default)
-    mock_input.side_effect = EOFError
-    assert do_local_prompt("Msg", default="world") == "world"
+@patch("questionary.confirm")
+def test_do_local_prompt_confirm(mock_confirm, mock_tty):
+    mock_inst = MagicMock()
+    mock_confirm.return_value = mock_inst
     
-    mock_input.side_effect = EOFError
-    assert do_local_prompt("Msg", choices=["A", "B"], default="B") == "B"
+    mock_inst.ask.return_value = True
+    assert do_local_prompt("Msg", prompt_type="confirm") == True
     
-    mock_input.side_effect = EOFError
-    assert do_local_prompt("Msg", multiple=True, default="def") == ["def"]
+    mock_inst.ask.return_value = None
+    assert do_local_prompt("Msg", prompt_type="confirm", default=False) == False
 

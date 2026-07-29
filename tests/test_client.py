@@ -58,7 +58,7 @@ def test_client_call_interactive_prompt(mock_prompt, mock_stream):
     
     client.call_interactive("pkg.install", {})
     
-    mock_prompt.assert_called_once_with("msg", ["A", "B"], "A", False)
+    mock_prompt.assert_called_once_with("msg", "text", ["A", "B"], "A", False)
 
 @patch("steglib.client.StegClient.stream")
 def test_client_call_interactive_error(mock_stream):
