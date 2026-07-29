@@ -236,4 +236,4 @@ def test_execute_oserror(mock_info, mock_error, mock_run, mock_getsize, mock_isf
     mock_run.side_effect = OSError("os error")
     with pytest.raises(RuntimeError):
         backend.execute("logs")
-    mock_error.assert_any_call("[pkg1] Error during logs: os error")
+    mock_error.assert_any_call("[pkg1] Failed to logs: os error")

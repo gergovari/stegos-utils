@@ -3,6 +3,7 @@
 import os
 import yaml
 from steglib.utils import run_cmd
+import subprocess
 import hashlib
 import logging
 
@@ -187,7 +188,6 @@ class DockerComposeBackend(BackendBase):
             else:
                 # For logs, we must capture the output so the daemon sends it to the client
                 if action == "logs" and follow:
-                    import subprocess
                     process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
                     for line in iter(process.stdout.readline, ''):
                         logger.info(line.rstrip('\n'))
@@ -200,9 +200,15 @@ class DockerComposeBackend(BackendBase):
                         logger.info(res.stdout.strip())
                     if res.stderr:
                         logger.error(res.stderr.strip())
+        except subprocess.CalledProcessError as e:
+            details = (e.stderr or e.output or "No output.").strip()
+            err_msg = f"[{self.pkg}] Failed to {action}: Docker command failed with exit code {e.returncode}.\nDetails:\n{details}"
+            logger.error(err_msg)
+            raise RuntimeError(err_msg)
         except Exception as e:
-            logger.error(f"[{self.pkg}] Error during {action}: {e}")
-            raise RuntimeError(f"[{self.pkg}] Failed to {action}: {e}")
+            err_msg = f"[{self.pkg}] Failed to {action}: {e}"
+            logger.error(err_msg)
+            raise RuntimeError(err_msg)
 
 BACKENDS = {
     "docker-compose": DockerComposeBackend,
