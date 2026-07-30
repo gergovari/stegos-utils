@@ -192,8 +192,10 @@ class DockerComposeBackend(BackendBase):
         try:
             env = ensure_running(self.group_dir, verbose)
         except Exception as e:
-            logger.error(f"[{self.pkg}] {e}")
-            return
+            if verbose:
+                raise BackendError(f"Backend failed to start: {e}")
+            else:
+                raise BackendError("Backend failed to start package.")
             
         cmd = ["docker", "compose", "-p", self.pkg, "-f", compose_file]
         if action == "start":
