@@ -282,6 +282,22 @@ class DockerComposeBackend(BackendBase):
             
             friendly_msg = None
             exc_class = BackendError
+            
+            if action == "start" and "no such container" in details_lower:
+                logger.info(f"[{self.pkg}] Detected corrupted Docker state. Attempting recovery...")
+                down_cmd = ["docker", "compose", "-p", self.pkg, "-f", compose_file, "down"]
+                try:
+                    run_cmd(down_cmd, env=env, logger=logger, check=False)
+                except Exception:
+                    pass
+                try:
+                    run_cmd(cmd, env=env, logger=logger, error_msg="Docker command failed after recovery attempt.", check=True)
+                    self._sync_docker_cache(compose_file, "post-start")
+                    return
+                except subprocess.CalledProcessError as retry_e:
+                    details = (retry_e.stderr or retry_e.output or "No output.").strip()
+                    details_lower = details.lower()
+
             if "no space left on device" in details_lower:
                 try:
                     usage = shutil.disk_usage(self.group_dir)
