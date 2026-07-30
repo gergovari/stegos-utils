@@ -299,27 +299,6 @@ class DockerComposeBackend(BackendBase):
             friendly_msg = None
             exc_class = BackendError
             
-            if action == "start" and "no such container" in details_lower:
-                logger.debug(f"[{self.pkg}] Detected corrupted Docker state. Attempting recovery...")
-                import re
-                match = re.search(r'no such container:?\s*([a-f0-9]+)', details_lower)
-                if match:
-                    bad_id = match.group(1)
-                    run_cmd(["docker", "rm", "-f", bad_id], env=env, logger=logger, check=False)
-                
-                down_cmd = ["docker", "compose", "-p", self.pkg, "-f", compose_file, "down"]
-                try:
-                    run_cmd(down_cmd, env=env, logger=logger, check=False)
-                except Exception:
-                    pass
-                try:
-                    run_cmd(cmd, env=env, logger=logger, error_msg="Docker command failed after recovery attempt.", check=True)
-                    self._sync_docker_cache(compose_file, "post-start")
-                    return
-                except subprocess.CalledProcessError as retry_e:
-                    details = (retry_e.stderr or retry_e.output or "No output.").strip()
-                    details_lower = details.lower()
-                    logger.debug(f"[{self.pkg}] Recovery failed. Error: {details}")
 
             if "no space left on device" in details_lower:
                 try:
@@ -350,7 +329,10 @@ class DockerComposeBackend(BackendBase):
             if friendly_msg:
                 err_msg = f"[{self.pkg}] Failed to {action}: {friendly_msg}"
             else:
-                err_msg = f"[{self.pkg}] Failed to {action}: Docker command failed with exit code {e.returncode}."
+                if verbose:
+                    err_msg = f"[{self.pkg}] Failed to {action}: Docker command failed with exit code {e.returncode}."
+                else:
+                    err_msg = f"[{self.pkg}] Backend failed to {action} package."
             
             # Note: We do NOT append details to the message here. The daemon/backend should only provide the structured error.
             # The client dictates representation based on args.verbose.
