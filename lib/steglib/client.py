@@ -135,6 +135,8 @@ class StegClient:
                         err.details = msg["details"]
                     raise err
                 elif msg["type"] == "log":
+                    if msg.get("levelno", logging.INFO) < logging.INFO and not args.get("verbose"):
+                        continue
                     if console:
                         console.print(msg.get("message"), markup=False)
                     else:

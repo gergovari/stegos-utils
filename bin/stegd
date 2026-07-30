@@ -19,7 +19,7 @@ class ContextRoutingHandler(logging.Handler):
         if send_fn:
             try:
                 msg = self.format(record)
-                send_fn({"type": "log", "message": msg})
+                send_fn({"type": "log", "message": msg, "levelno": record.levelno})
             except Exception:
                 self.handleError(record)
 
@@ -27,7 +27,7 @@ class ContextRoutingHandler(logging.Handler):
 routing_handler = ContextRoutingHandler()
 routing_handler.setFormatter(logging.Formatter('%(message)s'))
 logging.getLogger().addHandler(routing_handler)
-logging.getLogger().setLevel(logging.INFO)
+logging.getLogger().setLevel(logging.DEBUG)
 
 @app.on_stream()
 def handle_stream(rfile, wfile):
@@ -52,10 +52,7 @@ def handle_stream(rfile, wfile):
             return default
         ans = json.loads(ans_line)
         return ans.get("answer")
-
-    if args.get("verbose"):
-        logging.getLogger().setLevel(logging.DEBUG)
-
+        
     try:
         result = dispatcher.dispatch(action, args, interactive_cb, send)
         send({"type": "done", "result": result if result is not None else "Success"})
