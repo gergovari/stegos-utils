@@ -174,7 +174,18 @@ class PackageManager:
                 from steglib.utils import hash_dir
                 
                 backend_dir = os.path.join(self.engine.group_dir, instance_id, BACKEND_DIR)
-                before_hash = hash_dir(backend_dir)
+                conf_path = inst.conf_path
+                
+                def get_instance_hash():
+                    import hashlib
+                    h = hashlib.md5()
+                    h.update(hash_dir(backend_dir).encode("utf-8"))
+                    if os.path.exists(conf_path):
+                        with open(conf_path, "rb") as f:
+                            h.update(f.read())
+                    return h.hexdigest()
+
+                before_hash = get_instance_hash()
                 
                 pkg_dir = self.engine.find_package_dir(pkg_name)
                 is_interactive = bool(interactive_cb)
@@ -186,7 +197,7 @@ class PackageManager:
                     interactive_cb=interactive_cb
                 )
                 
-                after_hash = hash_dir(backend_dir)
+                after_hash = get_instance_hash()
                 
                 if before_hash != after_hash:
                     logger.info("[%s] Ensuring instance is up to date...", instance_id)

@@ -170,6 +170,7 @@ def test_upgrade(mock_lm, mock_instance, mock_isdir, mock_listdir, mock_hash):
     mock_inst_obj = Mock()
     mock_inst_obj.is_installed = True
     mock_inst_obj.package_name = "pkg1"
+    mock_inst_obj.conf_path = "/mock/conf.json"
     mock_instance.return_value = mock_inst_obj
     
     manager = PackageManager(engine_mock)

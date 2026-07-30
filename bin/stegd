@@ -10,11 +10,32 @@ from steglib.daemon_api import create_dispatcher
 app = StegServerApp()
 dispatcher = create_dispatcher()
 
+import contextvars
+request_send_fn = contextvars.ContextVar('request_send_fn', default=None)
+
+class ContextRoutingHandler(logging.Handler):
+    def emit(self, record):
+        send_fn = request_send_fn.get()
+        if send_fn:
+            try:
+                msg = self.format(record)
+                send_fn({"type": "log", "message": msg})
+            except Exception:
+                self.handleError(record)
+
+# Setup global routing handler once
+routing_handler = ContextRoutingHandler()
+routing_handler.setFormatter(logging.Formatter('%(message)s'))
+logging.getLogger().addHandler(routing_handler)
+logging.getLogger().setLevel(logging.INFO)
+
 @app.on_stream()
 def handle_stream(rfile, wfile):
     def send(msg):
         wfile.write((json.dumps(msg) + "\n").encode("utf-8"))
         wfile.flush()
+
+    request_send_fn.set(send)
 
     line = rfile.readline()
     if not line:
@@ -32,19 +53,8 @@ def handle_stream(rfile, wfile):
         ans = json.loads(ans_line)
         return ans.get("answer")
 
-    class StreamHandler(logging.Handler):
-        def emit(self, record):
-            try:
-                msg = self.format(record)
-                send({"type": "log", "message": msg})
-            except Exception:
-                self.handleError(record)
-
-    stream_handler = StreamHandler()
-    root_logger = logging.getLogger()
-    old_handlers = list(root_logger.handlers)
-    root_logger.handlers = [stream_handler]
-    root_logger.setLevel(logging.INFO if not args.get("verbose") else logging.DEBUG)
+    if args.get("verbose"):
+        logging.getLogger().setLevel(logging.DEBUG)
 
     try:
         result = dispatcher.dispatch(action, args, interactive_cb, send)
@@ -54,8 +64,6 @@ def handle_stream(rfile, wfile):
         if hasattr(e, "details"):
             resp["details"] = e.details
         send(resp)
-    finally:
-        root_logger.handlers = old_handlers
 
 def main():
     parser = argparse.ArgumentParser(description="stegOS Daemon")
