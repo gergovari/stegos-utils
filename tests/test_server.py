@@ -31,7 +31,7 @@ def test_steg_server_app_serve_unix(mock_exists, mock_remove, mock_chmod, mock_s
     mock_remove.assert_called_once_with("/tmp/test.sock")
     mock_server_instance.serve_forever.assert_called_once()
 
-@patch("steglib.server.http.server.HTTPServer")
+@patch("steglib.server.ThreadingHTTPServer")
 def test_steg_server_app_serve_tcp(mock_server):
     app = StegServerApp()
     

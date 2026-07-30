@@ -35,7 +35,10 @@ class StegRequestHandler(http.server.BaseHTTPRequestHandler):
         else:
             self.server.app.handle_request("POST", self)
 
-class UnixHTTPServer(socketserver.UnixStreamServer, http.server.HTTPServer):
+class UnixHTTPServer(socketserver.ThreadingMixIn, socketserver.UnixStreamServer, http.server.HTTPServer):
+    pass
+    
+class ThreadingHTTPServer(socketserver.ThreadingMixIn, http.server.HTTPServer):
     pass
 
 class StegServerApp:
@@ -108,7 +111,7 @@ class StegServerApp:
         self.server.serve_forever()
         
     def serve_tcp(self, host, port):
-        self.server = http.server.HTTPServer((host, port), StegRequestHandler)
+        self.server = ThreadingHTTPServer((host, port), StegRequestHandler)
         self.server.app = self
         logger.info(f"Listening on tcp {host}:{port}")
         self.server.serve_forever()

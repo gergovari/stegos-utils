@@ -226,3 +226,44 @@ def test_resolve_secrets_no_secrets_field(mock_cap, mock_resolve, mock_stegos_ro
     result = engine._resolve_secrets({}, pkg_conf={}, reconfigure=False,
                                      non_interactive=False, interactive_cb=None)
     assert result == {}
+
+@patch("steglib.engine.GroupManager.resolve", return_value="default")
+@patch("steglib.engine.CapabilityManager")
+@patch("steglib.engine.load_manifest")
+@patch("steglib.engine.Instance")
+@patch("steglib.engine.os.makedirs")
+@patch("steglib.engine.Environment")
+def test_engine_capability_metadata_injection(mock_env, mock_makedirs, mock_instance, mock_load, mock_cap, mock_resolve, mock_stegos_root):
+    manifest = {
+        "name": "pkg1",
+        "singleton": False,
+        "capabilities": {
+            "consumes": [
+                {"name": "cap1", "wait_for_start": False},
+                {"name": "cap2"} # defaults to True
+            ]
+        }
+    }
+    mock_load.return_value = manifest
+    
+    mock_inst_obj = Mock()
+    mock_inst_obj.read_conf.return_value = {}
+    mock_instance.return_value = mock_inst_obj
+    
+    engine = PackageEngine()
+    engine._find_instances_by_package = Mock(return_value=[])
+    engine.cap_manager = Mock()
+    engine._resolve_capabilities = Mock(return_value={"cap1": ["inst2"], "cap2": ["inst3"]})
+    
+    engine.process_package("/pkg")
+    
+    # Assert that capability_metadata was injected into final_conf correctly
+    mock_inst_obj.write_conf.assert_called_once()
+    args, kwargs = mock_inst_obj.write_conf.call_args
+    final_conf = args[0]
+    
+    assert "capability_metadata" in final_conf
+    assert final_conf["capability_metadata"] == {
+        "cap1": {"wait_for_start": False},
+        "cap2": {"wait_for_start": True}
+    }

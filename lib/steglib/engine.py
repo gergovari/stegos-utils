@@ -182,6 +182,13 @@ class PackageEngine:
                 raise ValueError(f"Validation failed: {exc.message}")
 
         final_conf["enabled_capabilities"] = enabled_caps
+        
+        cap_meta = {}
+        for cap_name, meta in consumes.items():
+            cap_meta[cap_name] = {
+                "wait_for_start": meta.get("wait_for_start", True)
+            }
+        final_conf["capability_metadata"] = cap_meta
 
         # Resolve secrets (auto-generate or preserve).
         generated_secrets = self._resolve_secrets(

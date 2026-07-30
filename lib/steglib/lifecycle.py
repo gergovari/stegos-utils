@@ -59,7 +59,10 @@ class LifecycleManager:
                 conf = Instance(self.group_name, pkg).read_conf()
                 if conf:
                     enabled_caps = conf.get("enabled_capabilities", {})
-                    for provs in enabled_caps.values():
+                    cap_meta = conf.get("capability_metadata", {})
+                    for cap_name, provs in enabled_caps.items():
+                        if not cap_meta.get(cap_name, {}).get("wait_for_start", True):
+                            continue
                         if not isinstance(provs, list):
                             provs = [provs]
                         for p in provs:
@@ -133,24 +136,127 @@ class LifecycleManager:
             else:
                 packages_to_run = topo_order
 
-        # Execute action
+        # Execute action concurrently honoring dependencies
+        import concurrent.futures
+        import threading
+
+        # Resolve exact dependencies for the selected subset of packages
+        dependencies = {pkg: set() for pkg in packages_to_run}
+        
+        if action in ("stop", "restart"):
+            # A depends on B. A must stop before B stops. So B depends on A stopping.
+            for pkg in packages_to_run:
+                for dep in graph.get(pkg, []):
+                    if dep in packages_to_run:
+                        dependencies[dep].add(pkg)
+        else:
+            # A depends on B. B must start before A starts. So A depends on B starting.
+            for pkg in packages_to_run:
+                for dep in graph.get(pkg, []):
+                    if dep in packages_to_run:
+                        dependencies[pkg].add(dep)
+        
         results = {}
-        for pkg in packages_to_run:
+        lock = threading.Lock()
+        condition = threading.Condition(lock)
+        completed = set()
+        failed = set()
+        launched = set()
+        
+        thread_local = threading.local()
+        
+        class ThreadBufferFilter(logging.Filter):
+            def filter(self, record):
+                if getattr(thread_local, 'buffer_logs', False):
+                    if not hasattr(thread_local, 'buffered_records'):
+                        thread_local.buffered_records = []
+                    thread_local.buffered_records.append(record)
+                    return False
+                return True
+                
+        root_logger = logging.getLogger()
+        buf_filter = ThreadBufferFilter()
+        buffer_enabled = not (action == "logs" and follow)
+        
+        if buffer_enabled:
+            for handler in root_logger.handlers:
+                handler.addFilter(buf_filter)
+        
+        def run_pkg(pkg):
             inst = Instance(self.group_name, pkg)
             if not inst.is_installed:
                 if package_name:
                     logger.warning("[%s] No deployer backend found. Was it installed with stegpkg?", pkg)
-                continue
-
+                return None
             deployer = inst.deployer
             backend_cls = BACKENDS.get(deployer)
             if backend_cls:
                 pkg_path = os.path.join(self.cont_dir, pkg, BACKEND_DIR)
                 backend = backend_cls(pkg, pkg_path, self.cont_dir)
-                res = backend.execute(action, if_created, follow=follow)
-                if res is not None:
-                    results[pkg] = res
+                return backend.execute(action, if_created, follow=follow)
             else:
                 logger.warning("[%s] Warning: Unknown deployer '%s'", pkg, deployer)
+                return None
+
+        def worker(pkg):
+            if buffer_enabled:
+                thread_local.buffer_logs = True
+                thread_local.buffered_records = []
+            try:
+                res = run_pkg(pkg)
+                with lock:
+                    if buffer_enabled:
+                        thread_local.buffer_logs = False
+                        for record in getattr(thread_local, 'buffered_records', []):
+                            for h in root_logger.handlers:
+                                if record.levelno >= h.level:
+                                    h.handle(record)
+                    if res is not None:
+                        results[pkg] = res
+                    completed.add(pkg)
+                    condition.notify_all()
+            except Exception as e:
+                with lock:
+                    if buffer_enabled:
+                        thread_local.buffer_logs = False
+                        for record in getattr(thread_local, 'buffered_records', []):
+                            for h in root_logger.handlers:
+                                if record.levelno >= h.level:
+                                    h.handle(record)
+                    logger.error(f"[{pkg}] Action '{action}' failed: {e}")
+                    failed.add(pkg)
+                    condition.notify_all()
+
+        max_workers = len(packages_to_run) if packages_to_run else 1
+        try:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+                while len(completed) + len(failed) < len(packages_to_run):
+                    with lock:
+                        # Propagate failures
+                        for p in packages_to_run:
+                            if p not in launched and p not in failed:
+                                if any(dep in failed for dep in dependencies[p]):
+                                    failed.add(p)
+                                    logger.error(f"[{p}] Skipping action '{action}' because dependencies failed.")
+                                    condition.notify_all()
+                        
+                        ready = [
+                            p for p in packages_to_run
+                            if p not in launched and p not in failed and dependencies[p].issubset(completed)
+                        ]
+                        
+                        for p in ready:
+                            launched.add(p)
+                            executor.submit(worker, p)
+                        
+                        if not ready and len(completed) + len(failed) < len(packages_to_run):
+                            condition.wait()
+        finally:
+            if buffer_enabled:
+                for handler in root_logger.handlers:
+                    handler.removeFilter(buf_filter)
+                        
+        if failed:
+            raise RuntimeError(f"Action '{action}' failed for packages: {', '.join(failed)}")
         
         return results
