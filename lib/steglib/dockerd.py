@@ -44,14 +44,17 @@ def ensure_running(group_dir: str, verbose: bool = False) -> dict:
         pid_file = os.path.join(backend_dir, "docker.pid")
         log_file = os.path.join(backend_dir, "dockerd.log")
         
+        # Wipe existing state to eliminate corruption, acting like a tmpfs but on disk to prevent OOM
+        import shutil
+        if os.path.exists(data_root):
+            try:
+                # We use a subprocess to forcefully remove it in case of permission issues
+                subprocess.run(["rm", "-rf", data_root], check=False)
+            except Exception:
+                pass
+        
         os.makedirs(data_root, exist_ok=True)
         os.makedirs(exec_root, exist_ok=True)
-        
-        # Mount tmpfs to completely eliminate persistent state corruption
-        if not os.path.ismount(data_root):
-            subprocess.run(["mount", "-t", "tmpfs", "-o", "size=2G,mode=0711", "tmpfs", data_root], check=False)
-        if not os.path.ismount(exec_root):
-            subprocess.run(["mount", "-t", "tmpfs", "-o", "size=500M,mode=0711", "tmpfs", exec_root], check=False)
         
         # Label the backend directory and its contents so dockerd_t can manage it
         subprocess.run(["chcon", "-R", "-t", "container_file_t", backend_dir], capture_output=True)

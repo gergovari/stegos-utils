@@ -16,9 +16,7 @@ def test_get_docker_env():
 
 @patch("steglib.dockerd.subprocess.run")
 @patch("steglib.dockerd.os.makedirs")
-@patch("steglib.dockerd.os.path.ismount")
-def test_ensure_running_already_running(mock_ismount, mock_makedirs, mock_run):
-    mock_ismount.return_value = True
+def test_ensure_running_already_running(mock_makedirs, mock_run):
     mock_run.side_effect = [
         subprocess.CompletedProcess(args=[], returncode=0, stdout=b""), # chcon
         subprocess.CompletedProcess(args=[], returncode=0, stdout=b"")  # docker info
@@ -30,22 +28,20 @@ def test_ensure_running_already_running(mock_ismount, mock_makedirs, mock_run):
 @patch("steglib.dockerd.subprocess.run")
 @patch("steglib.dockerd.subprocess.Popen")
 @patch("steglib.dockerd.os.makedirs")
-@patch("steglib.dockerd.os.path.ismount")
 @patch("steglib.dockerd.os.path.exists")
 @patch("steglib.dockerd.os.remove")
 @patch("steglib.dockerd.os.kill")
 @patch("steglib.dockerd.time.sleep")
 @patch("builtins.open", new_callable=mock_open, read_data="1234")
-def test_ensure_running_starts_daemon(mock_file, mock_sleep, mock_kill, mock_remove, mock_exists, mock_ismount, mock_makedirs, mock_popen, mock_run):
-    mock_ismount.return_value = False
+def test_ensure_running_starts_daemon(mock_file, mock_sleep, mock_kill, mock_remove, mock_exists, mock_makedirs, mock_popen, mock_run):
     
-    # Exists check for pid and sock files
-    mock_exists.side_effect = lambda path: path.endswith("docker.pid") or path.endswith("docker.sock")
+    # Exists check for pid, sock, and data_root
+    mock_exists.side_effect = lambda path: path.endswith("docker.pid") or path.endswith("docker.sock") or path.endswith("data")
     
     # First run is chcon, second is docker info (fails), next mount, mount, then loop docker info (succeeds)
     def run_side_effect(*args, **kwargs):
         cmd = args[0]
-        if cmd[0] == "mount":
+        if cmd[0] == "rm":
             return subprocess.CompletedProcess(args=cmd, returncode=0, stdout=b"")
         if cmd[0] == "chcon":
             return subprocess.CompletedProcess(args=cmd, returncode=0, stdout=b"")
@@ -63,10 +59,9 @@ def test_ensure_running_starts_daemon(mock_file, mock_sleep, mock_kill, mock_rem
     env = ensure_running("/path/to/group")
     assert env["DOCKER_HOST"] == "unix:///path/to/group/backend/dockerd/docker.sock"
     
-    # Verify tmpfs was mounted
-    mount_calls = [c for c in mock_run.call_args_list if c[0][0][0] == "mount"]
-    assert len(mount_calls) == 2
-    assert "tmpfs" in mount_calls[0][0][0]
+    # Verify that the rm -rf was called to wipe the data_root
+    rm_calls = [c for c in mock_run.call_args_list if c[0][0][0] == "rm" and "-rf" in c[0][0]]
+    assert len(rm_calls) >= 1
     
     # Verify stale cleanup
     mock_kill.assert_called_with(1234, 9)
@@ -75,12 +70,10 @@ def test_ensure_running_starts_daemon(mock_file, mock_sleep, mock_kill, mock_rem
 @patch("steglib.dockerd.subprocess.run")
 @patch("steglib.dockerd.subprocess.Popen")
 @patch("steglib.dockerd.os.makedirs")
-@patch("steglib.dockerd.os.path.ismount")
 @patch("steglib.dockerd.os.path.exists")
 @patch("steglib.dockerd.time.sleep")
 @patch("builtins.open", new_callable=mock_open)
-def test_ensure_running_timeout(mock_file, mock_sleep, mock_exists, mock_ismount, mock_makedirs, mock_popen, mock_run):
-    mock_ismount.return_value = True
+def test_ensure_running_timeout(mock_file, mock_sleep, mock_exists, mock_makedirs, mock_popen, mock_run):
     mock_exists.return_value = False
     
     def run_side_effect(*args, **kwargs):
