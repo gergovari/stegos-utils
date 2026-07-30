@@ -134,13 +134,14 @@ class DockerComposeBackend(BackendBase):
             logger.error(f"_get_needed_download_size exception: {e}")
         return None
 
-    def _sync_docker_cache(self, compose_file, action):
+    def _sync_docker_cache(self, compose_file, action, verbose=False):
         """
         Synchronize docker images with the local group cache to allow offline starts.
         
         Args:
             compose_file (str): Path to the docker-compose.yml file.
             action (str): Either 'pre-start' (load) or 'post-start' (save).
+            verbose (bool): Whether to output verbose logs.
         """
         try:
             with open(compose_file, 'r') as f:
@@ -166,20 +167,30 @@ class DockerComposeBackend(BackendBase):
         env = get_docker_env(self.group_dir)
         
         if action == "pre-start":
+            printed = False
             for image in images:
                 safe_name = hashlib.md5(image.encode()).hexdigest() + ".tar"
                 cache_path = os.path.join(cache_dir, safe_name)
                 if os.path.isfile(cache_path):
                     check = run_cmd(["docker", "image", "inspect", image], env=env, logger=logger, check=False, quiet_fail=True)
                     if check.returncode != 0:
-                        print(f"Loading cached image '{image}' from group cache...")
+                        if verbose:
+                            logger.info(f"[{self.pkg}] Loading cached image '{image}' from group cache...")
+                        elif not printed:
+                            logger.info(f"[{self.pkg}] Backend is loading cache...")
+                            printed = True
                         run_cmd(["docker", "load", "-i", cache_path], env=env, logger=logger, error_msg=f"Failed to load image from cache: {cache_path}", check=True)
         elif action == "post-start":
+            printed = False
             for image in images:
                 safe_name = hashlib.md5(image.encode()).hexdigest() + ".tar"
                 cache_path = os.path.join(cache_dir, safe_name)
                 if not os.path.isfile(cache_path):
-                    print(f"Caching image '{image}' to group cache...")
+                    if verbose:
+                        logger.info(f"[{self.pkg}] Caching image '{image}' to group cache...")
+                    elif not printed:
+                        logger.info(f"[{self.pkg}] Backend is caching images...")
+                        printed = True
                     run_cmd(["docker", "save", "-o", cache_path, image], env=env, logger=logger, error_msg=f"Failed to save image {image} to cache", check=True)
                     
     def execute(self, action, if_created=False, verbose=False, follow=False):
@@ -209,7 +220,7 @@ class DockerComposeBackend(BackendBase):
                 except Exception:
                     pass
             
-            self._sync_docker_cache(compose_file, "pre-start")
+            self._sync_docker_cache(compose_file, "pre-start", verbose)
             
             # Pre-create external networks to prevent race conditions during concurrent start
             try:
@@ -257,7 +268,7 @@ class DockerComposeBackend(BackendBase):
             if action == "start":
                 logger.info(f"[{self.pkg}] Starting package...")
                 run_cmd(cmd, env=env, logger=logger, error_msg="Docker command failed.", check=True)
-                self._sync_docker_cache(compose_file, "post-start")
+                self._sync_docker_cache(compose_file, "post-start", verbose)
             elif action == "stop":
                 logger.info(f"[{self.pkg}] Stopping package...")
                 run_cmd(cmd, env=env, logger=logger, error_msg="Docker command failed.", check=True)

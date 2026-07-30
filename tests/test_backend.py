@@ -96,7 +96,7 @@ def test_execute_start(mock_sync, mock_run, mock_getsize, mock_isfile):
     
     assert any(call[0][0] == ["chcon", "-R", "-t", "container_file_t", "/pkg_path"] for call in mock_run.call_args_list)
     assert any(call[0][0] == ["docker", "compose", "-p", "pkg1", "-f", "/pkg_path/docker-compose.yml", "up", "-d", "--remove-orphans"] for call in mock_run.call_args_list)
-    mock_sync.assert_has_calls([call("/pkg_path/docker-compose.yml", "pre-start"), call("/pkg_path/docker-compose.yml", "post-start")])
+    mock_sync.assert_has_calls([call("/pkg_path/docker-compose.yml", "pre-start", False), call("/pkg_path/docker-compose.yml", "post-start", False)])
 
 @patch("os.path.isfile", return_value=True)
 @patch("os.path.getsize", return_value=100)

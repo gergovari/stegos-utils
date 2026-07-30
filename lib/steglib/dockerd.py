@@ -44,15 +44,6 @@ def ensure_running(group_dir: str, verbose: bool = False) -> dict:
         pid_file = os.path.join(backend_dir, "docker.pid")
         log_file = os.path.join(backend_dir, "dockerd.log")
         
-        # Wipe existing state to eliminate corruption, acting like a tmpfs but on disk to prevent OOM
-        import shutil
-        if os.path.exists(data_root):
-            try:
-                # We use a subprocess to forcefully remove it in case of permission issues
-                subprocess.run(["rm", "-rf", data_root], check=False)
-            except Exception:
-                pass
-        
         os.makedirs(data_root, exist_ok=True)
         os.makedirs(exec_root, exist_ok=True)
         
@@ -67,6 +58,17 @@ def ensure_running(group_dir: str, verbose: bool = False) -> dict:
             return env
             
         # 2. If we reach here, daemon is not responding. 
+        # Wipe existing state to eliminate corruption, acting like a tmpfs but on disk to prevent OOM
+        import shutil
+        if os.path.exists(data_root):
+            try:
+                # We use a subprocess to forcefully remove it in case of permission issues
+                subprocess.run(["rm", "-rf", data_root], check=False)
+            except Exception:
+                pass
+        
+        os.makedirs(data_root, exist_ok=True)
+
         # Clean up stale pid/sock files just in case.
         if os.path.exists(pid_file):
             try:
