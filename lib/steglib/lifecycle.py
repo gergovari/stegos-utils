@@ -245,9 +245,11 @@ class LifecycleManager:
                             if p not in launched and p not in failed and dependencies[p].issubset(completed)
                         ]
                         
+                        import contextvars
                         for p in ready:
                             launched.add(p)
-                            executor.submit(worker, p)
+                            ctx = contextvars.copy_context()
+                            executor.submit(ctx.run, worker, p)
                         
                         if not ready and len(completed) + len(failed) < len(packages_to_run):
                             condition.wait()
