@@ -111,7 +111,7 @@ class DockerComposeInjector:
         network_rules = dc_rules.get("networks", [])
         if network_rules:
             for svc_name in targeted:
-                self._merge_networks(services[svc_name], network_rules)
+                self._merge_networks(services[svc_name], network_rules, self.global_conf.get("group_name", "stegos"), prov_id)
             self._ensure_top_level_networks(compose_data, network_rules, self.global_conf.get("group_name", "stegos"), prov_id)
 
         # --- labels (dict → service.labels, template keys AND values) ---
@@ -185,12 +185,14 @@ class DockerComposeInjector:
         svc_data["environment"] = env
 
     @staticmethod
-    def _merge_networks(svc_data, networks):
+    def _merge_networks(svc_data, networks, group_name, prov_id):
         """Merges networks into a service and ensures 'default' is present.
 
         Args:
             svc_data (dict): The service's compose definition.
             networks (list): Network names to add.
+            group_name (str): The group name.
+            prov_id (str): The provider instance ID.
         """
         svc_nets = svc_data.get("networks", [])
         if isinstance(svc_nets, dict):
@@ -199,8 +201,9 @@ class DockerComposeInjector:
             svc_nets = []
 
         for net in networks:
-            if net not in svc_nets:
-                svc_nets.append(net)
+            scoped_name = f"{group_name}_{prov_id}_{net}"
+            if scoped_name not in svc_nets:
+                svc_nets.append(scoped_name)
 
         if "default" not in svc_nets:
             svc_nets.append("default")
@@ -221,10 +224,11 @@ class DockerComposeInjector:
         if not isinstance(global_nets, dict):
             global_nets = {}
         for net in networks:
-            if net not in global_nets:
-                global_nets[net] = {
+            scoped_name = f"{group_name}_{prov_id}_{net}"
+            if scoped_name not in global_nets:
+                global_nets[scoped_name] = {
                     "external": True,
-                    "name": f"{group_name}_{prov_id}_{net}"
+                    "name": scoped_name
                 }
         compose_data["networks"] = global_nets
 
