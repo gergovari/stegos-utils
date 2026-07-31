@@ -74,9 +74,9 @@ class DockerComposeInjector:
                 if not dc_rules:
                     continue
 
-                self._apply_rules(compose_data, dc_rules, render_ctx, target_services)
+                self._apply_rules(compose_data, dc_rules, render_ctx, target_services, prov_id)
 
-    def _apply_rules(self, compose_data, dc_rules, render_ctx, target_services):
+    def _apply_rules(self, compose_data, dc_rules, render_ctx, target_services, prov_id):
         """Applies all docker-compose injection rules.
 
         Args:
@@ -84,6 +84,7 @@ class DockerComposeInjector:
             dc_rules (dict): The provider's docker-compose injector rules.
             render_ctx (dict): Jinja2 template rendering context.
             target_services (list or None): Services to target, or None for all.
+            prov_id (str): The instance ID of the capability provider.
         """
         services = compose_data.get("services", {})
         targeted = self._resolve_targets(services, target_services)
@@ -111,7 +112,7 @@ class DockerComposeInjector:
         if network_rules:
             for svc_name in targeted:
                 self._merge_networks(services[svc_name], network_rules)
-            self._ensure_top_level_networks(compose_data, network_rules)
+            self._ensure_top_level_networks(compose_data, network_rules, self.global_conf.get("group_name", "stegos"), prov_id)
 
         # --- labels (dict → service.labels, template keys AND values) ---
         label_rules = dc_rules.get("labels", {})
@@ -207,19 +208,24 @@ class DockerComposeInjector:
         svc_data["networks"] = svc_nets
 
     @staticmethod
-    def _ensure_top_level_networks(compose_data, networks):
+    def _ensure_top_level_networks(compose_data, networks, group_name, prov_id):
         """Ensures injected networks are declared as external at top level.
 
         Args:
             compose_data (dict): The full docker-compose structure.
             networks (list): Network names to declare.
+            group_name (str): The group name.
+            prov_id (str): The provider instance ID.
         """
         global_nets = compose_data.get("networks", {})
         if not isinstance(global_nets, dict):
             global_nets = {}
         for net in networks:
             if net not in global_nets:
-                global_nets[net] = {"external": True}
+                global_nets[net] = {
+                    "external": True,
+                    "name": f"{group_name}_{prov_id}_{net}"
+                }
         compose_data["networks"] = global_nets
 
     @staticmethod

@@ -140,6 +140,34 @@ class LifecycleManager:
         import concurrent.futures
         import threading
 
+        if action == "start":
+            # Pre-create all explicit external networks sequentially before concurrent startup
+            try:
+                from steglib.dockerd import ensure_running
+                from steglib.utils import run_cmd
+                import yaml
+
+                env = ensure_running(self.cont_dir)
+                for pkg in packages_to_run:
+                    inst = Instance(self.group_name, pkg)
+                    if not inst.is_installed:
+                        continue
+                    compose_file = os.path.join(self.cont_dir, pkg, BACKEND_DIR, "docker-compose.yml")
+                    if os.path.isfile(compose_file):
+                        try:
+                            with open(compose_file, "r") as f:
+                                cdata = yaml.safe_load(f)
+                            nets = cdata.get("networks", {}) if cdata else {}
+                            for n_name, n_data in nets.items():
+                                if isinstance(n_data, dict) and n_data.get("external"):
+                                    ext_name = n_data.get("name", n_name)
+                                    if ext_name and ext_name != "default":
+                                        run_cmd(["docker", "network", "create", "--label", f"com.docker.compose.network={ext_name}", ext_name], env=env, logger=logger, check=False, quiet_fail=True)
+                        except Exception as e:
+                            logger.debug(f"[{pkg}] Failed to parse networks for pre-creation: {e}")
+            except Exception as e:
+                logger.debug(f"Failed to pre-create networks: {e}")
+
         # Resolve exact dependencies for the selected subset of packages
         dependencies = {pkg: set() for pkg in packages_to_run}
         

@@ -189,6 +189,16 @@ class DockerComposeDeployer(DeployerBase):
                         compose_data, cap_manager, exports_by_cap, self.final_conf,
                     )
 
+                    # Rewrite provider networks to be scoped and external to avoid naming conflicts
+                    for cap in self.manifest.get("capabilities", {}).get("provides", []):
+                        for net_name in cap.get("injectors", {}).get("docker-compose", {}).get("networks", []):
+                            if "networks" in compose_data and net_name in compose_data["networks"]:
+                                scoped_name = f"{self.group_name}_{self.instance_name}_{net_name}"
+                                compose_data["networks"][net_name] = {
+                                    "external": True,
+                                    "name": scoped_name
+                                }
+
                     rendered = yaml.dump(compose_data, default_flow_style=False, sort_keys=False)
                 except Exception as e:
                     print(f"Warning: Failed to dynamically inject capabilities into {dest}: {e}")

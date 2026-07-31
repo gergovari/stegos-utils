@@ -222,20 +222,6 @@ class DockerComposeBackend(BackendBase):
             
             self._sync_docker_cache(compose_file, "pre-start", verbose)
             
-            # Pre-create external networks to prevent race conditions during concurrent start
-            try:
-                import yaml
-                with open(compose_file, 'r') as f:
-                    cdata = yaml.safe_load(f)
-                
-                nets = cdata.get("networks", {}) if cdata else {}
-                for n_name, n_data in nets.items():
-                    if isinstance(n_data, dict) and n_data.get("external"):
-                        ext_name = n_data.get("name", n_name)
-                        run_cmd(["docker", "network", "create", ext_name], env=env, logger=logger, check=False, quiet_fail=True)
-            except Exception as e:
-                logger.debug(f"[{self.pkg}] Failed to pre-create external networks: {e}")
-            
             # Apply SELinux context so the Docker daemon can access the files
             try:
                 run_cmd(["chcon", "-R", "-t", "container_file_t", self.pkg_path], logger=logger, check=False)
