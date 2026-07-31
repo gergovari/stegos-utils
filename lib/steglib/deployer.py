@@ -152,7 +152,7 @@ class DockerComposeDeployer(DeployerBase):
 
         consumes = self.manifest.get("capabilities", {}).get("consumes", [])
         injector = DockerComposeInjector(
-            self.env, self.global_conf, consumes, self.instance_name,
+            self.env, self.global_conf, consumes, self.instance_name, self.group_name,
         )
 
         for entry in templates:

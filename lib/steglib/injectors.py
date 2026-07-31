@@ -13,18 +13,20 @@ class DockerComposeInjector:
     merge strategies.
     """
 
-    def __init__(self, jinja_env, global_conf, consumes, instance_name):
+    def __init__(self, jinja_env, global_conf, consumes, instance_name, group_name="stegos"):
         """Initializes the DockerComposeInjector.
 
         Args:
             jinja_env (jinja2.Environment): Jinja2 environment for resolving templates.
             global_conf (dict): Global group configuration.
-            consumes (list): Parsed consumes list from the consumer's manifest.
-            instance_name (str): The consumer's instance ID.
+            consumes (list): Capabilities consumed by this instance.
+            instance_name (str): Instance ID of the consumer.
+            group_name (str): The group name this instance belongs to.
         """
         self.jinja_env = jinja_env
         self.global_conf = global_conf
         self.instance_name = instance_name
+        self.group_name = group_name
 
         # Build a lookup: {cap_name: consumes_entry_dict}
         self._consumes_map = {}
@@ -111,8 +113,8 @@ class DockerComposeInjector:
         network_rules = dc_rules.get("networks", [])
         if network_rules:
             for svc_name in targeted:
-                self._merge_networks(services[svc_name], network_rules, self.global_conf.get("group_name", "stegos"), prov_id)
-            self._ensure_top_level_networks(compose_data, network_rules, self.global_conf.get("group_name", "stegos"), prov_id)
+                self._merge_networks(services[svc_name], network_rules, self.group_name, prov_id)
+            self._ensure_top_level_networks(compose_data, network_rules, self.group_name, prov_id)
 
         # --- labels (dict → service.labels, template keys AND values) ---
         label_rules = dc_rules.get("labels", {})
