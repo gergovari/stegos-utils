@@ -97,18 +97,19 @@ def test_network_injection(jinja_env, global_conf):
     
     injector.inject(compose_data, cap_manager, {}, {"enabled_capabilities": {"net_cap": ["prov1"]}})
     
-    assert "stegos_prov1_injected_net1" in compose_data["services"]["svc1"]["networks"]
-    assert "stegos_prov1_injected_net2" in compose_data["services"]["svc1"]["networks"]
+    assert "injected_net1" in compose_data["services"]["svc1"]["networks"]
+    assert "injected_net2" in compose_data["services"]["svc1"]["networks"]
     assert "default" in compose_data["services"]["svc1"]["networks"]
     
     assert "existing_net" in compose_data["services"]["svc2"]["networks"]
-    assert "stegos_prov1_injected_net1" in compose_data["services"]["svc2"]["networks"]
+    assert "injected_net1" in compose_data["services"]["svc2"]["networks"]
     assert "default" in compose_data["services"]["svc2"]["networks"]
     
     # Top level networks
     assert "networks" in compose_data
-    assert compose_data["networks"]["stegos_prov1_injected_net1"]["external"] is True
-    assert compose_data["networks"]["stegos_prov1_injected_net2"]["external"] is True
+    assert "injected_net1" in compose_data["networks"]
+    assert compose_data["networks"]["injected_net1"]["external"] is True
+    assert compose_data["networks"]["injected_net1"]["name"] == "stegos_prov1_injected_net1"
 
 
 def test_labels_injection(jinja_env, global_conf):

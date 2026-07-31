@@ -194,20 +194,10 @@ class DockerComposeDeployer(DeployerBase):
                         for net_name in cap.get("injectors", {}).get("docker-compose", {}).get("networks", []):
                             if "networks" in compose_data and net_name in compose_data["networks"]:
                                 scoped_name = f"{self.group_name}_{self.instance_name}_{net_name}"
-                                compose_data["networks"][scoped_name] = {
+                                compose_data["networks"][net_name] = {
                                     "external": True,
                                     "name": scoped_name
                                 }
-                                del compose_data["networks"][net_name]
-                                
-                                # Update all services that reference the old unscoped network
-                                for svc in compose_data.get("services", {}).values():
-                                    svc_nets = svc.get("networks", [])
-                                    if isinstance(svc_nets, list):
-                                        svc["networks"] = [scoped_name if n == net_name else n for n in svc_nets]
-                                    elif isinstance(svc_nets, dict):
-                                        if net_name in svc_nets:
-                                            svc_nets[scoped_name] = svc_nets.pop(net_name)
 
                     rendered = yaml.dump(compose_data, default_flow_style=False, sort_keys=False)
                 except Exception as e:

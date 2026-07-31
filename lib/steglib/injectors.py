@@ -201,9 +201,8 @@ class DockerComposeInjector:
             svc_nets = []
 
         for net in networks:
-            scoped_name = f"{group_name}_{prov_id}_{net}"
-            if scoped_name not in svc_nets:
-                svc_nets.append(scoped_name)
+            if net not in svc_nets:
+                svc_nets.append(net)
 
         if "default" not in svc_nets:
             svc_nets.append("default")
@@ -225,8 +224,8 @@ class DockerComposeInjector:
             global_nets = {}
         for net in networks:
             scoped_name = f"{group_name}_{prov_id}_{net}"
-            if scoped_name not in global_nets:
-                global_nets[scoped_name] = {
+            if net not in global_nets:
+                global_nets[net] = {
                     "external": True,
                     "name": scoped_name
                 }

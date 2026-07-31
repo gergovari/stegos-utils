@@ -71,13 +71,12 @@ networks:
     
     result = yaml.safe_load(written_data)
     
-    # Validate the network was renamed in top-level networks
+    # Validate the network was properly scoped in top-level networks
     assert "networks" in result
-    assert "proxy" not in result["networks"]
-    assert "stegos_my_inst_proxy" in result["networks"]
-    assert result["networks"]["stegos_my_inst_proxy"]["external"] is True
-    
-    # Validate the network was renamed in the service
-    assert "stegos_my_inst_proxy" in result["services"]["app"]["networks"]
-    assert "proxy" not in result["services"]["app"]["networks"]
+    assert "proxy" in result["networks"]
+    assert result["networks"]["proxy"]["name"] == "stegos_my_inst_proxy"
+    assert result["networks"]["proxy"]["external"] is True
+
+    # Validate that the service still uses the 'proxy' alias
+    assert "proxy" in result["services"]["app"]["networks"]
     assert "other" in result["services"]["app"]["networks"]
