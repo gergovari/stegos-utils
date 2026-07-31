@@ -132,13 +132,15 @@ class PackageManager:
                 raise RuntimeError("Aborting removal due to active dependents.")
 
         for real_id in real_ids:
-            logger.info("Stopping instance '%s'...", real_id)
+            logger.info("Stopping instance '%s' before removal...", real_id)
             try:
                 from steglib.lifecycle import LifecycleManager
                 lm = LifecycleManager(self.engine.group_name)
                 lm.execute("stop", real_id, False, verbose)
             except Exception:
                 logger.warning("Failed to stop instance cleanly. Proceeding with removal...")
+
+            logger.info("Removing instance '%s'...", real_id)
 
             instance_dir = os.path.join(self.engine.group_dir, real_id)
 
@@ -187,6 +189,16 @@ class PackageManager:
 
                 before_hash = get_instance_hash()
                 
+                was_running = False
+                try:
+                    from steglib.lifecycle import LifecycleManager
+                    lm = LifecycleManager(self.engine.group_name)
+                    status_res = lm.execute("status", instance_id)
+                    if status_res and instance_id in status_res:
+                        was_running = status_res[instance_id].get("state") == "running"
+                except Exception:
+                    pass
+                
                 pkg_dir = self.engine.find_package_dir(pkg_name)
                 is_interactive = bool(interactive_cb)
                 
@@ -200,10 +212,13 @@ class PackageManager:
                 after_hash = get_instance_hash()
                 
                 if before_hash != after_hash:
-                    logger.info("[%s] Ensuring instance is up to date...", instance_id)
-                    from steglib.lifecycle import LifecycleManager
-                    lm = LifecycleManager(self.engine.group_name)
-                    res = lm.execute("start", instance_id, True, verbose)
+                    if was_running:
+                        logger.info("[%s] Ensuring instance is up to date and restarting...", instance_id)
+                        from steglib.lifecycle import LifecycleManager
+                        lm = LifecycleManager(self.engine.group_name)
+                        lm.execute("start", instance_id, True, verbose)
+                    else:
+                        logger.info("[%s] Instance upgraded.", instance_id)
                     upgraded_instances.append(instance_id)
                 else:
                     logger.info("[%s] Already up to date.", instance_id)
@@ -211,6 +226,34 @@ class PackageManager:
                 logger.warning("Could not upgrade '%s' (instance '%s'): %s", pkg_name, instance_id, exc)
 
         if upgraded_instances:
+            # Cascade reconfigure dependents
+            all_dependents = set()
+            for u in upgraded_instances:
+                deps = self._find_dependents([u])
+                for dependent_list in deps.values():
+                    all_dependents.update(dependent_list)
+                    
+            for dep_id in all_dependents:
+                if dep_id in upgraded_instances:
+                    continue
+                logger.info("[%s] Cascade reconfiguring dependent instance...", dep_id)
+                inst = Instance(self.engine.group_name, dep_id)
+                if inst.is_installed:
+                    pkg_name = inst.package_name
+                    if pkg_name:
+                        try:
+                            pkg_dir = self.engine.find_package_dir(pkg_name)
+                            self.engine.process_package(
+                                pkg_dir, cli_conf={}, reconfigure=False,
+                                non_interactive=True, instance_id=dep_id
+                            )
+                            logger.info("[%s] Restarting dependent instance...", dep_id)
+                            from steglib.lifecycle import LifecycleManager
+                            lm = LifecycleManager(self.engine.group_name)
+                            lm.execute("start", dep_id, False, verbose)
+                        except Exception as e:
+                            logger.warning("Failed to reconfigure '%s': %s", dep_id, e)
+                            
             logger.info("Upgraded instances in group '%s': %s", self.engine.group_name, ", ".join(upgraded_instances))
         else:
             logger.info("No instances upgraded in group '%s'.", self.engine.group_name)
@@ -361,7 +404,7 @@ class PackageManager:
                         pkg_dir, cli_conf={}, reconfigure=False,
                         non_interactive=True, instance_id=dep_id,
                     )
-                    logger.info("[%s] Restarting...", dep_id)
+                    logger.info("[%s] Reconfigured dependent instance. Restarting...", dep_id)
                     from steglib.lifecycle import LifecycleManager
                     lm = LifecycleManager(self.engine.group_name)
                     lm.execute("start", dep_id, False, verbose)

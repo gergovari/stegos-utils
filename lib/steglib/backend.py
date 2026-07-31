@@ -199,6 +199,14 @@ class DockerComposeBackend(BackendBase):
         if not os.path.isfile(compose_file):
             logger.error(f"[{self.pkg}] Missing docker-compose.yml in {self.pkg_path}")
             return
+        from steglib.dockerd import is_running, get_docker_env
+        
+        # If action is status or stop, we can skip starting dockerd if it's already dead
+        if action in ("status", "stop") and not is_running(self.group_dir):
+            if action == "status":
+                return {"state": "stopped", "running": 0, "total": 0}
+            return None # nothing to stop
+
         # Ensure isolated daemon is running
         try:
             env = ensure_running(self.group_dir, verbose)

@@ -29,6 +29,15 @@ def get_docker_env(group_dir: str) -> dict:
     env["DOCKER_HOST"] = f"unix://{sock_file}"
     return env
 
+def is_running(group_dir: str) -> bool:
+    """Checks if the dockerd is currently running and responding."""
+    env = get_docker_env(group_dir)
+    try:
+        res = subprocess.run(["docker", "info"], env=env, capture_output=True)
+        return res.returncode == 0
+    except FileNotFoundError:
+        return False
+
 import threading
 _dockerd_lock = threading.Lock()
 

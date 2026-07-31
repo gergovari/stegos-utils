@@ -133,10 +133,11 @@ def test_execute_start_if_created_proceed(mock_sync, mock_run, mock_getsize, moc
     backend.execute("start", if_created=True)
     mock_sync.assert_called()
 
+@patch("steglib.dockerd.is_running", return_value=True)
 @patch("os.path.isfile", return_value=True)
 @patch("os.path.getsize", return_value=100)
 @patch("steglib.backend.run_cmd")
-def test_execute_stop_skip(mock_run, mock_getsize, mock_isfile):
+def test_execute_stop_skip(mock_run, mock_getsize, mock_isfile, mock_is_running):
     backend = DockerComposeBackend("pkg1", "/pkg_path", "/group_dir")
     mock_ret = MagicMock()
     mock_ret.stdout = ""
@@ -145,10 +146,11 @@ def test_execute_stop_skip(mock_run, mock_getsize, mock_isfile):
     backend.execute("stop")
     assert mock_run.call_count == 1 # only ps
 
+@patch("steglib.dockerd.is_running", return_value=True)
 @patch("os.path.isfile", return_value=True)
 @patch("os.path.getsize", return_value=100)
 @patch("steglib.backend.run_cmd")
-def test_execute_stop_proceed(mock_run, mock_getsize, mock_isfile):
+def test_execute_stop_proceed(mock_run, mock_getsize, mock_isfile, mock_is_running):
     backend = DockerComposeBackend("pkg1", "/pkg_path", "/group_dir")
     
     def side_effect(*args, **kwargs):
@@ -161,9 +163,10 @@ def test_execute_stop_proceed(mock_run, mock_getsize, mock_isfile):
     backend.execute("stop")
     assert any(call[0][0] == ["docker", "compose", "-p", "pkg1", "-f", "/pkg_path/docker-compose.yml", "down"] for call in mock_run.call_args_list)
 
+@patch("steglib.dockerd.is_running", return_value=True)
 @patch("os.path.isfile", return_value=True)
 @patch("steglib.backend.run_cmd")
-def test_execute_status_stopped(mock_run, mock_isfile):
+def test_execute_status_stopped(mock_run, mock_isfile, mock_is_running):
     backend = DockerComposeBackend("pkg1", "/pkg_path", "/group_dir")
     
     mock_ret = MagicMock()
@@ -173,9 +176,10 @@ def test_execute_status_stopped(mock_run, mock_isfile):
     res = backend.execute("status")
     assert res == {"state": "stopped", "running": 0, "total": 0}
 
+@patch("steglib.dockerd.is_running", return_value=True)
 @patch("os.path.isfile", return_value=True)
 @patch("steglib.backend.run_cmd")
-def test_execute_status_running(mock_run, mock_isfile):
+def test_execute_status_running(mock_run, mock_isfile, mock_is_running):
     backend = DockerComposeBackend("pkg1", "/pkg_path", "/group_dir")
     
     def side_effect(*args, **kwargs):

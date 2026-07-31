@@ -173,11 +173,71 @@ def test_upgrade(mock_lm, mock_instance, mock_isdir, mock_listdir, mock_hash):
     mock_inst_obj.conf_path = "/mock/conf.json"
     mock_instance.return_value = mock_inst_obj
     
+    # Mock status as running
+    mock_lm.return_value.execute.return_value = {"inst1": {"state": "running", "running": 1, "total": 1}}
+    
     manager = PackageManager(engine_mock)
+    manager._find_dependents = Mock(return_value={})
     manager.upgrade()
     
     engine_mock.process_package.assert_called_once()
-    mock_lm.return_value.execute.assert_called_once_with("start", "inst1", True, False)
+    mock_lm.return_value.execute.assert_has_calls([call("status", "inst1"), call("start", "inst1", True, False)], any_order=False)
+
+@patch("steglib.utils.hash_dir", side_effect=["hash1", "hash2"])
+@patch("steglib.manager.os.listdir")
+@patch("steglib.manager.os.path.isdir", return_value=True)
+@patch("steglib.manager.Instance")
+@patch("steglib.lifecycle.LifecycleManager")
+def test_upgrade_stopped(mock_lm, mock_instance, mock_isdir, mock_listdir, mock_hash):
+    engine_mock = Mock()
+    engine_mock.group_name = "default"
+    engine_mock.group_dir = "/group"
+    mock_listdir.return_value = ["inst1"]
+    
+    mock_inst_obj = Mock()
+    mock_inst_obj.is_installed = True
+    mock_inst_obj.package_name = "pkg1"
+    mock_inst_obj.conf_path = "/mock/conf.json"
+    mock_instance.return_value = mock_inst_obj
+    
+    # Mock status as stopped
+    mock_lm.return_value.execute.return_value = {"inst1": {"state": "stopped", "running": 0, "total": 1}}
+    
+    manager = PackageManager(engine_mock)
+    manager._find_dependents = Mock(return_value={})
+    manager.upgrade()
+    
+    engine_mock.process_package.assert_called_once()
+    # It should not call start because it was stopped
+    mock_lm.return_value.execute.assert_called_once_with("status", "inst1")
+
+@patch("steglib.utils.hash_dir", side_effect=["hash1", "hash2"])
+@patch("steglib.manager.os.listdir")
+@patch("steglib.manager.os.path.isdir", return_value=True)
+@patch("steglib.manager.Instance")
+@patch("steglib.lifecycle.LifecycleManager")
+def test_upgrade_cascade(mock_lm, mock_instance, mock_isdir, mock_listdir, mock_hash):
+    engine_mock = Mock()
+    engine_mock.group_name = "default"
+    engine_mock.group_dir = "/group"
+    mock_listdir.return_value = ["inst1"]
+    
+    mock_inst_obj = Mock()
+    mock_inst_obj.is_installed = True
+    mock_inst_obj.package_name = "pkg1"
+    mock_inst_obj.conf_path = "/mock/conf.json"
+    mock_instance.return_value = mock_inst_obj
+    
+    # Mock status as running
+    mock_lm.return_value.execute.return_value = {"inst1": {"state": "running", "running": 1, "total": 1}}
+    
+    manager = PackageManager(engine_mock)
+    manager._find_dependents = Mock(return_value={"inst1": ["dep1"]})
+    manager.upgrade()
+    
+    # 1 for inst1, 1 for dep1
+    assert engine_mock.process_package.call_count == 2
+    mock_lm.return_value.execute.assert_any_call("start", "dep1", False, False)
 
 @patch("steglib.manager.os.listdir", return_value=["repo1"])
 @patch("steglib.manager.os.path.isdir", return_value=True)
