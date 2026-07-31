@@ -81,13 +81,15 @@ def main():
             from rich.console import Console
             Console().print(f"\n[bold green]✓[/bold green] [white]Successfully executed '{action}' on {pkg_str}.[/white]")
     except Exception as e:
+        from rich.console import Console
+        console = Console(stderr=True)
         if getattr(e, 'details', None):
             if args.verbose:
-                logging.error(f"{e}\nDetails:\n{e.details}")
+                console.print(f"[bold red]✖[/bold red] [white]{e}\nDetails:\n{e.details}[/white]")
             else:
-                logging.error(f"{e} (run with --verbose for logs)")
+                console.print(f"[bold red]✖[/bold red] [white]{e} (run with --verbose for logs)[/white]")
         else:
-            logging.error(f"{e}")
+            console.print(f"[bold red]✖[/bold red] [white]{e}[/white]")
         sys.exit(1)
 
 if __name__ == "__main__":
