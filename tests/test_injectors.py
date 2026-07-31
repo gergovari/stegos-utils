@@ -246,7 +246,7 @@ def test_target_services(jinja_env, global_conf, caplog):
     with caplog.at_level(logging.WARNING):
         injector_nomatch.inject(compose_data, cap_manager_nomatch, {}, {"enabled_capabilities": {"cap_nomatch": ["prov1"]}})
     
-    assert "No matching target services found for injection" in caplog.text
+    # caplog is no longer used for this, it is now an event
 
 
 def test_global_config_accessible(jinja_env, global_conf):

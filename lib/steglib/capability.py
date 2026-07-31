@@ -34,6 +34,14 @@ class CapabilityManager:
             "injector": injector_rules,
         }
 
+    def unregister_instance(self, instance_name):
+        """Unregister all capabilities provided by an instance."""
+        for cap_name, provs in list(self._registry.items()):
+            if instance_name in provs:
+                del provs[instance_name]
+                if not provs:
+                    del self._registry[cap_name]
+
     def get_providers(self, cap_name):
         """Return providers for a given capability.
 

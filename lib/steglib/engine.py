@@ -314,10 +314,10 @@ class PackageEngine:
             providers = self.cap_manager.get_providers(cap_name)
             if not providers:
                 if cap_name in enabled:
-                    import logging
-                    logger = logging.getLogger(__name__)
-                    logger.warning(f"[{instance_name}] Integration '{cap_name}' providers disappeared! It will be disabled.")
-                    del enabled[cap_name]
+                    if reconfigure:
+                        from steglib import events
+                        events.emit("integration_disabled_missing_providers", package=instance_name, capability=cap_name)
+                        del enabled[cap_name]
                 continue
 
             prov_list = list(providers.keys())
@@ -360,9 +360,8 @@ class PackageEngine:
 
         for cap_name in list(enabled.keys()):
             if cap_name not in consumes:
-                import logging
-                logger = logging.getLogger(__name__)
-                logger.warning(f"[{instance_name}] Integration '{cap_name}' is no longer required by this package and was removed.")
+                from steglib import events
+                events.emit("integration_removed_no_longer_required", package=instance_name, capability=cap_name)
                 del enabled[cap_name]
 
         return enabled

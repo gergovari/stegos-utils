@@ -1,10 +1,10 @@
 import subprocess
-import logging
+from steglib import events
 
-def run_cmd(cmd, logger, error_msg=None, quiet_fail=False, **kwargs):
+def run_cmd(cmd, error_msg=None, quiet_fail=False, **kwargs):
     """
     Executes a shell command. Automatically captures output.
-    If the command fails (non-zero exit code), it logs the stderr/stdout via logger.debug unless quiet_fail is True.
+    If the command fails (non-zero exit code), it emits an event via events.emit unless quiet_fail is True.
     """
     # Force capture output and text decoding
     kwargs["capture_output"] = True
@@ -18,13 +18,13 @@ def run_cmd(cmd, logger, error_msg=None, quiet_fail=False, **kwargs):
     
     if result.returncode != 0:
         if error_msg:
-            logger.debug(error_msg)
+            events.emit("command_failed_msg", command=" ".join(cmd), msg=error_msg)
             
         if not quiet_fail:
             err_out = result.stderr.strip() if result.stderr else ""
             std_out = result.stdout.strip() if result.stdout else ""
             details = err_out or std_out or "No output."
-            logger.debug("Command failed: %s\nDetails:\n%s", " ".join(cmd), details)
+            events.emit("command_failed", command=" ".join(cmd), details=details)
         
         if check:
             # Raise the exception like check=True would

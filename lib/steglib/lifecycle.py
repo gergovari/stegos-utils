@@ -1,5 +1,5 @@
 import json
-import logging
+from steglib import events
 import os
 
 from steglib.backend import BACKENDS, BackendBase
@@ -7,7 +7,6 @@ from steglib.constants import BACKEND_DIR, PERSISTENT_DIR
 from steglib.group import GroupManager
 from steglib.instance import Instance
 
-logger = logging.getLogger(__name__)
 
 class MultipleInstancesError(Exception):
     """Raised when multiple instances match a requested package name.
@@ -68,6 +67,8 @@ class LifecycleManager:
                         for p in provs:
                             if p in graph and p != pkg:
                                 graph[pkg].add(p)
+                            elif p not in graph and action == "start":
+                                events.emit("integration_missing", consumer=pkg, capability=cap_name, missing_provider=p)
             except (json.JSONDecodeError, OSError, KeyError):
                 pass
 
@@ -78,7 +79,7 @@ class LifecycleManager:
 
         def visit(n):
             if n in temp:
-                logger.warning("Circular dependency detected involving '%s'", n)
+                events.emit("circular_dependency", package=n)
                 return
             if n not in visited:
                 temp.add(n)
@@ -162,11 +163,11 @@ class LifecycleManager:
                                 if isinstance(n_data, dict) and n_data.get("external"):
                                     ext_name = n_data.get("name", n_name)
                                     if ext_name and ext_name != "default":
-                                        run_cmd(["docker", "network", "create", "--label", f"com.docker.compose.network={ext_name}", ext_name], env=env, logger=logger, check=False, quiet_fail=True)
+                                        run_cmd(["docker", "network", "create", "--label", f"com.docker.compose.network={ext_name}", ext_name], env=env, check=False, quiet_fail=True)
                         except Exception as e:
-                            logger.debug(f"[{pkg}] Failed to parse networks for pre-creation: {e}")
+                            events.emit("network_precreate_failed", package=pkg, error=str(e))
             except Exception as e:
-                logger.debug(f"Failed to pre-create networks: {e}")
+                events.emit("network_precreate_error", error=str(e))
 
         # Resolve exact dependencies for the selected subset of packages
         dependencies = {pkg: set() for pkg in packages_to_run}
@@ -193,28 +194,13 @@ class LifecycleManager:
         
         thread_local = threading.local()
         
-        class ThreadBufferFilter(logging.Filter):
-            def filter(self, record):
-                if getattr(thread_local, 'buffer_logs', False):
-                    if not hasattr(thread_local, 'buffered_records'):
-                        thread_local.buffered_records = []
-                    thread_local.buffered_records.append(record)
-                    return False
-                return True
-                
-        root_logger = logging.getLogger()
-        buf_filter = ThreadBufferFilter()
-        buffer_enabled = not (action == "logs" and follow)
-        
-        if buffer_enabled:
-            for handler in root_logger.handlers:
-                handler.addFilter(buf_filter)
+        thread_local = threading.local()
         
         def run_pkg(pkg):
             inst = Instance(self.group_name, pkg)
             if not inst.is_installed:
                 if package_name:
-                    logger.warning("[%s] No deployer backend found. Was it installed with stegpkg?", pkg)
+                    events.emit("no_deployer_backend", package=pkg)
                 return None
             deployer = inst.deployer
             backend_cls = BACKENDS.get(deployer)
@@ -223,35 +209,20 @@ class LifecycleManager:
                 backend = backend_cls(pkg, pkg_path, self.cont_dir)
                 return backend.execute(action, if_created, follow=follow)
             else:
-                logger.warning("[%s] Warning: Unknown deployer '%s'", pkg, deployer)
+                events.emit("unknown_deployer", package=pkg, deployer=deployer)
                 return None
 
         def worker(pkg):
-            if buffer_enabled:
-                thread_local.buffer_logs = True
-                thread_local.buffered_records = []
             try:
                 res = run_pkg(pkg)
                 with lock:
-                    if buffer_enabled:
-                        thread_local.buffer_logs = False
-                        for record in getattr(thread_local, 'buffered_records', []):
-                            for h in root_logger.handlers:
-                                if record.levelno >= h.level:
-                                    h.handle(record)
                     if res is not None:
                         results[pkg] = res
                     completed.add(pkg)
                     condition.notify_all()
             except Exception as e:
                 with lock:
-                    if buffer_enabled:
-                        thread_local.buffer_logs = False
-                        for record in getattr(thread_local, 'buffered_records', []):
-                            for h in root_logger.handlers:
-                                if record.levelno >= h.level:
-                                    h.handle(record)
-                    logger.error(f"[{pkg}] Action '{action}' failed: {e}")
+                    events.emit("action_failed", package=pkg, action=action, error=str(e))
                     failed.add(pkg)
                     condition.notify_all()
 
@@ -265,7 +236,7 @@ class LifecycleManager:
                             if p not in launched and p not in failed:
                                 if any(dep in failed for dep in dependencies[p]):
                                     failed.add(p)
-                                    logger.error(f"[{p}] Skipping action '{action}' because dependencies failed.")
+                                    events.emit("skipping_action", package=p, action=action, reason="dependencies failed")
                                     condition.notify_all()
                         
                         ready = [
@@ -282,9 +253,7 @@ class LifecycleManager:
                         if not ready and len(completed) + len(failed) < len(packages_to_run):
                             condition.wait()
         finally:
-            if buffer_enabled:
-                for handler in root_logger.handlers:
-                    handler.removeFilter(buf_filter)
+            pass
                         
         if failed:
             raise RuntimeError(f"Action '{action}' failed for packages: {', '.join(failed)}")

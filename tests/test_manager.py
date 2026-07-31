@@ -50,8 +50,9 @@ def test_manager_install_pre_registers_capabilities(mock_load_manifest, mocker):
         return {"name": "other"}
     
     mock_load_manifest.side_effect = fake_load_manifest
-    
     engine_mock = Mock()
+    engine_mock.group_dir = "/fake/group/dir"
+    engine_mock.group_name = "fake_group"
     engine_mock.find_package_dir.side_effect = lambda pkg, repo: f"/path/to/{pkg}"
     engine_mock._resolve_instance_name.side_effect = lambda pkg, *args: f"{pkg}-123"
     

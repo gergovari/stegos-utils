@@ -10,24 +10,10 @@ from steglib.daemon_api import create_dispatcher
 app = StegServerApp()
 dispatcher = create_dispatcher()
 
-import contextvars
-request_send_fn = contextvars.ContextVar('request_send_fn', default=None)
+from steglib import events
 
-class ContextRoutingHandler(logging.Handler):
-    def emit(self, record):
-        send_fn = request_send_fn.get()
-        if send_fn:
-            try:
-                msg = self.format(record)
-                send_fn({"type": "log", "message": msg, "levelno": record.levelno})
-            except Exception:
-                self.handleError(record)
-
-# Setup global routing handler once
-routing_handler = ContextRoutingHandler()
-routing_handler.setFormatter(logging.Formatter('%(message)s'))
-logging.getLogger().addHandler(routing_handler)
-logging.getLogger().setLevel(logging.DEBUG)
+# Just basic logging for the daemon itself, not routed to clients
+logging.basicConfig(level=logging.INFO, format="%(message)s")
 
 @app.on_stream()
 def handle_stream(rfile, wfile):
@@ -35,7 +21,7 @@ def handle_stream(rfile, wfile):
         wfile.write((json.dumps(msg) + "\n").encode("utf-8"))
         wfile.flush()
 
-    request_send_fn.set(send)
+    events.request_send_fn.set(send)
 
     line = rfile.readline()
     if not line:
@@ -68,8 +54,6 @@ def main():
     parser.add_argument("--tcp-port", type=int, help="TCP port to listen on (optional)")
     parser.add_argument("--tcp-host", default="0.0.0.0", help="TCP host")
     args = parser.parse_args()
-
-    logging.basicConfig(level=logging.INFO, format="%(message)s")
 
     if args.tcp_port:
         app.serve_tcp(args.tcp_host, args.tcp_port)

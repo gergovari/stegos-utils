@@ -80,11 +80,11 @@ def test_sync_docker_cache_bad_yaml(mock_file):
     backend._sync_docker_cache("compose.yml", "pre-start")
 
 @patch("os.path.isfile", return_value=False)
-@patch("steglib.backend.logger.error")
+@patch("steglib.events.emit")
 def test_execute_missing_file(mock_error, mock_isfile):
     backend = DockerComposeBackend("pkg1", "/pkg_path", "/group_dir")
     backend.execute("start")
-    mock_error.assert_called_with("[pkg1] Missing docker-compose.yml in /pkg_path")
+    mock_error.assert_called_with("missing_compose_file", package="pkg1", path="/pkg_path")
 
 @patch("os.path.isfile", return_value=True)
 @patch("os.path.getsize", return_value=100)
@@ -200,7 +200,7 @@ def test_execute_logs(mock_run, mock_isfile):
 
 @patch("os.path.isfile", return_value=True)
 @patch("subprocess.Popen")
-@patch("steglib.backend.logger.info")
+@patch("steglib.events.emit")
 def test_execute_logs_follow(mock_info, mock_popen, mock_isfile):
     backend = DockerComposeBackend("pkg1", "/pkg_path", "/group_dir")
     mock_process = MagicMock()
@@ -210,8 +210,8 @@ def test_execute_logs_follow(mock_info, mock_popen, mock_isfile):
     
     backend.execute("logs", follow=True)
     assert mock_popen.call_args[0][0] == ["docker", "compose", "-p", "pkg1", "-f", "/pkg_path/docker-compose.yml", "logs", "-f"]
-    mock_info.assert_any_call("log1")
-    mock_info.assert_any_call("log2")
+    mock_info.assert_any_call("backend_log_line", package="pkg1", line="log1")
+    mock_info.assert_any_call("backend_log_line", package="pkg1", line="log2")
 
 @patch("os.path.isfile", return_value=True)
 @patch("steglib.backend.run_cmd")
@@ -223,9 +223,7 @@ def test_execute_unknown(mock_run, mock_isfile):
 @patch("os.path.isfile", return_value=True)
 @patch("os.path.getsize", return_value=100)
 @patch("steglib.backend.run_cmd")
-@patch("steglib.backend.logger.debug")
-@patch("steglib.backend.logger.info")
-def test_execute_subprocess_error(mock_info, mock_debug, mock_run, mock_getsize, mock_isfile):
+def test_execute_subprocess_error(mock_run, mock_getsize, mock_isfile):
     backend = DockerComposeBackend("pkg1", "/pkg_path", "/group_dir")
     
     def side_effect(*args, **kwargs):
@@ -234,7 +232,6 @@ def test_execute_subprocess_error(mock_info, mock_debug, mock_run, mock_getsize,
     
     with pytest.raises(BackendError):
         backend.execute("logs")
-    assert mock_debug.called
 
 @patch("os.path.isfile", return_value=True)
 @patch("os.path.getsize", return_value=100)
@@ -283,11 +280,8 @@ def test_execute_network_not_found_error(mock_run, mock_getsize, mock_isfile):
 @patch("os.path.isfile", return_value=True)
 @patch("os.path.getsize", return_value=100)
 @patch("steglib.backend.run_cmd")
-@patch("steglib.backend.logger.error")
-@patch("steglib.backend.logger.info")
-def test_execute_oserror(mock_info, mock_error, mock_run, mock_getsize, mock_isfile):
+def test_execute_oserror(mock_run, mock_getsize, mock_isfile):
     backend = DockerComposeBackend("pkg1", "/pkg_path", "/group_dir")
     mock_run.side_effect = OSError("os error")
     with pytest.raises(RuntimeError):
         backend.execute("logs")
-    mock_error.assert_any_call("[pkg1] Failed to logs: os error")

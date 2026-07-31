@@ -1,5 +1,5 @@
 import json
-import logging
+from steglib import events
 import os
 import pwd
 import tempfile
@@ -8,7 +8,6 @@ import time
 from steglib.constants import LABEL_PREFIX, TARGET_FOLDERS, GLOBAL_CONF_FILENAME
 from steglib.utils import run_cmd
 
-logger = logging.getLogger(__name__)
 
 class GroupInitializer:
     """Handles the initialization of stegOS groups on block devices.
@@ -44,7 +43,6 @@ class GroupInitializer:
         try:
             result = run_cmd(
                 ["blkid", "-o", "value", "-s", "TYPE", device],
-                logger=logger,
                 capture_output=True,
                 text=True,
                 check=True
@@ -113,32 +111,32 @@ class GroupInitializer:
                     f"Device {device} already contains a filesystem ({fs_type}). "
                     "Use force=True to wipe all data and initialize."
                 )
-            logger.info("Device %s contains data. Proceeding with wipe due to force=True...", device)
+            events.emit("log_info", message="Device %s contains data. Proceeding with wipe due to force=True..." % ( device))
 
-        logger.info("Formatting %s as ext4...", device)
+        events.emit("log_info", message="Formatting %s as ext4..." % ( device))
         label = f"{LABEL_PREFIX}.{group_name}"
         try:
-            run_cmd(["mkfs.ext4", "-F", "-L", label, "-q", device], logger=logger, error_msg=f"Failed to format logical volume '{device}' as ext4.", check=True)
-            logger.info("Successfully formatted with label: %s", label)
+            run_cmd(["mkfs.ext4", "-F", "-L", label, "-q", device], error_msg=f"Failed to format logical volume '{device}' as ext4.", check=True)
+            events.emit("log_info", message="Successfully formatted with label: %s" % ( label))
         except Exception as e:
             raise RuntimeError(f"Failed to format logical volume '{device}' as ext4. See logs for details.") from e
 
         # Temporarily mount to seed folders
         tmp_mnt = tempfile.mkdtemp(prefix="steggroup_")
-        logger.info("Mounting temporarily to %s to seed folders...", tmp_mnt)
+        events.emit("log_info", message="Mounting temporarily to %s to seed folders..." % ( tmp_mnt))
         try:
-            run_cmd(["mount", device, tmp_mnt], logger=logger, error_msg=f"Failed to mount logical volume '{device}' to '{tmp_mnt}'.", check=True)
+            run_cmd(["mount", device, tmp_mnt], error_msg=f"Failed to mount logical volume '{device}' to '{tmp_mnt}'.", check=True)
 
             # Create required folders
             for folder in TARGET_FOLDERS:
                 path = os.path.join(tmp_mnt, folder)
                 os.makedirs(path, exist_ok=True)
-                logger.debug("Created directory: /%s", folder)
+                events.emit("log_debug", message="Created directory: /%s" % ( folder))
 
             base_domain = domain or "localhost"
             tz = timezone or "UTC"
 
-            logger.info("Seeding a default global configuration into the new group...")
+            events.emit("log_info", message="Seeding a default global configuration into the new group...")
             default_global = {
                 "base_domain": base_domain,
                 "timezone": tz
@@ -148,7 +146,7 @@ class GroupInitializer:
             global_path = os.path.join(tmp_mnt, persistent_dir, GLOBAL_CONF_FILENAME)
             with open(global_path, "w") as f:
                 json.dump(default_global, f, indent=4)
-            logger.debug("Seeded: %s", global_path)
+            events.emit("log_debug", message="Seeded: %s" % ( global_path))
 
             # Ownership adjustment for stegOS standard user if needed
             try:
@@ -161,17 +159,17 @@ class GroupInitializer:
                     for f in files:
                         os.chown(os.path.join(root, f), steg_uid, steg_gid)
                 os.chown(tmp_mnt, steg_uid, steg_gid)
-                logger.info("Adjusted ownership for 'steguser'.")
+                events.emit("log_info", message="Adjusted ownership for 'steguser'.")
             except KeyError:
-                logger.warning("'steguser' not found on this system. Ownership left as root.")
+                events.emit("log_warning", message="'steguser' not found on this system. Ownership left as root.")
 
         except Exception as e:
-            logger.warning("Failed to initialize logical volume '%s'. It may need to be cleaned up manually.", device)
+            events.emit("log_warning", message="Failed to initialize logical volume '%s'. It may need to be cleaned up manually." % ( device))
             raise RuntimeError(f"Failed to initialize logical volume '{device}'. See logs for details.") from e
         finally:
-            logger.info("Unmounting...")
+            events.emit("log_info", message="Unmounting...")
             try:
-                run_cmd(["umount", tmp_mnt], logger=logger, check=True)
+                run_cmd(["umount", tmp_mnt], check=True)
             except Exception:
                 pass
             try:

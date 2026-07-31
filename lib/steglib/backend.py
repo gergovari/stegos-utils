@@ -7,9 +7,8 @@ from steglib.utils import run_cmd
 from steglib.exceptions import BackendError, InsufficientSpaceError, PortConflictError, NetworkNotFoundError
 import subprocess
 import hashlib
-import logging
+from steglib import events
 
-logger = logging.getLogger(__name__)
 
 import json
 from .constants import DOCKER_CACHE_DIR
@@ -85,13 +84,13 @@ class DockerComposeBackend(BackendBase):
             if not images:
                 return None
             
-            logger.info("  └── ⚠️  Disk space exhausted. ⏳ Calculating estimated download size (Press Ctrl+C to skip)...")
+            events.emit("log_info", message="  └── ⚠️  Disk space exhausted. ⏳ Calculating estimated download size (Press Ctrl+C to skip)...")
                 
             total_bytes = 0
             try:
                 env = ensure_running(self.group_dir, verbose)
             except Exception as e:
-                logger.error(f"Failed to ensure isolated dockerd is running: {e}")
+                events.emit("log_error", message=f"Failed to ensure isolated dockerd is running: {e}")
                 env = dict(os.environ)
                 
             env["DOCKER_CLI_EXPERIMENTAL"] = "enabled"
@@ -122,16 +121,16 @@ class DockerComposeBackend(BackendBase):
 
                         total_bytes += get_any_layers_size(data)
                     except json.JSONDecodeError as e:
-                        logger.error(f"Failed to parse manifest JSON for {image}: {e}")
+                        events.emit("log_error", message=f"Failed to parse manifest JSON for {image}: {e}")
                 else:
-                    logger.error(f"docker manifest inspect failed for {image}: {m_res.stderr}")
+                    events.emit("log_error", message=f"docker manifest inspect failed for {image}: {m_res.stderr}")
             
             if total_bytes > 0:
                 return f"{total_bytes / (1024 * 1024):.2f} MB"
             else:
-                logger.error("total_bytes was 0 after parsing manifests")
+                events.emit("log_error", message="total_bytes was 0 after parsing manifests")
         except Exception as e:
-            logger.error(f"_get_needed_download_size exception: {e}")
+            events.emit("log_error", message=f"_get_needed_download_size exception: {e}")
         return None
 
     def _sync_docker_cache(self, compose_file, action, verbose=False):
@@ -172,14 +171,14 @@ class DockerComposeBackend(BackendBase):
                 safe_name = hashlib.md5(image.encode()).hexdigest() + ".tar"
                 cache_path = os.path.join(cache_dir, safe_name)
                 if os.path.isfile(cache_path):
-                    check = run_cmd(["docker", "image", "inspect", image], env=env, logger=logger, check=False, quiet_fail=True)
+                    check = run_cmd(["docker", "image", "inspect", image], env=env,  check=False, quiet_fail=True)
                     if check.returncode != 0:
                         if verbose:
-                            logger.info(f"[{self.pkg}] Loading cached image '{image}' from group cache...")
+                            events.emit("log_info", message=f"[{self.pkg}] Loading cached image '{image}' from group cache...")
                         elif not printed:
-                            logger.info(f"[{self.pkg}] Backend is loading cache...")
+                            events.emit("log_info", message=f"[{self.pkg}] Backend is loading cache...")
                             printed = True
-                        run_cmd(["docker", "load", "-i", cache_path], env=env, logger=logger, error_msg=f"Failed to load image from cache: {cache_path}", check=True)
+                        run_cmd(["docker", "load", "-i", cache_path], env=env,  error_msg=f"Failed to load image from cache: {cache_path}", check=True)
         elif action == "post-start":
             printed = False
             for image in images:
@@ -187,17 +186,17 @@ class DockerComposeBackend(BackendBase):
                 cache_path = os.path.join(cache_dir, safe_name)
                 if not os.path.isfile(cache_path):
                     if verbose:
-                        logger.info(f"[{self.pkg}] Caching image '{image}' to group cache...")
+                        events.emit("log_info", message=f"[{self.pkg}] Caching image '{image}' to group cache...")
                     elif not printed:
-                        logger.info(f"[{self.pkg}] Backend is caching images...")
+                        events.emit("caching_images", package=self.pkg)
                         printed = True
-                    run_cmd(["docker", "save", "-o", cache_path, image], env=env, logger=logger, error_msg=f"Failed to save image {image} to cache", check=True)
+                    run_cmd(["docker", "save", "-o", cache_path, image], env=env,  error_msg=f"Failed to save image {image} to cache", check=True)
                     
     def execute(self, action, if_created=False, verbose=False, follow=False):
         """Execute a docker-compose command (e.g. start, stop, restart, logs, down)."""
         compose_file = os.path.join(self.pkg_path, "docker-compose.yml")
         if not os.path.isfile(compose_file):
-            logger.error(f"[{self.pkg}] Missing docker-compose.yml in {self.pkg_path}")
+            events.emit("missing_compose_file", package=self.pkg, path=self.pkg_path)
             return
         from steglib.dockerd import is_running, get_docker_env
         
@@ -222,7 +221,7 @@ class DockerComposeBackend(BackendBase):
                 # Check if the service has any containers; if not, skip starting
                 check_cmd = cmd + ["ps", "-q", "-a"]
                 try:
-                    result = run_cmd(check_cmd, logger=logger, check=True, quiet_fail=True)
+                    result = run_cmd(check_cmd,  check=True, quiet_fail=True)
                     if not result.stdout.strip():
                         return
                 except Exception:
@@ -232,7 +231,7 @@ class DockerComposeBackend(BackendBase):
             
             # Apply SELinux context so the Docker daemon can access the files
             try:
-                run_cmd(["chcon", "-R", "-t", "container_file_t", self.pkg_path], logger=logger, check=False)
+                run_cmd(["chcon", "-R", "-t", "container_file_t", self.pkg_path],  check=False)
             except Exception:
                 pass
                 
@@ -241,7 +240,7 @@ class DockerComposeBackend(BackendBase):
             # Check if the service has any containers; if not, skip stopping
             check_cmd = cmd + ["ps", "-q", "-a"]
             try:
-                result = run_cmd(check_cmd, logger=logger, check=True, quiet_fail=True)
+                result = run_cmd(check_cmd,  check=True, quiet_fail=True)
                 if not result.stdout.strip():
                     # No containers exist, nothing to stop
                     return
@@ -260,15 +259,15 @@ class DockerComposeBackend(BackendBase):
             
         try:
             if action == "start":
-                logger.info(f"[{self.pkg}] Starting package...")
-                run_cmd(cmd, env=env, logger=logger, error_msg="Docker command failed.", check=True)
+                events.emit("starting_package", package=self.pkg)
+                run_cmd(cmd, env=env,  error_msg="Docker command failed.", check=True)
                 self._sync_docker_cache(compose_file, "post-start", verbose)
             elif action == "stop":
-                logger.info(f"[{self.pkg}] Stopping package...")
-                run_cmd(cmd, env=env, logger=logger, error_msg="Docker command failed.", check=True)
+                events.emit("stopping_package", package=self.pkg)
+                run_cmd(cmd, env=env,  error_msg="Docker command failed.", check=True)
             elif action == "status":
-                all_ctrs = run_cmd(cmd + ["ps", "-q", "-a"], env=env, logger=logger, check=False).stdout.splitlines()
-                running_ctrs = run_cmd(cmd + ["ps", "-q", "--status=running"], env=env, logger=logger, check=False).stdout.splitlines()
+                all_ctrs = run_cmd(cmd + ["ps", "-q", "-a"], env=env,  check=False).stdout.splitlines()
+                running_ctrs = run_cmd(cmd + ["ps", "-q", "--status=running"], env=env,  check=False).stdout.splitlines()
                 total = len(all_ctrs)
                 running = len(running_ctrs)
                 
@@ -287,16 +286,16 @@ class DockerComposeBackend(BackendBase):
                 if action == "logs" and follow:
                     process = subprocess.Popen(cmd, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
                     for line in iter(process.stdout.readline, ''):
-                        logger.info(line.rstrip('\n'))
+                        events.emit("backend_log_line", package=self.pkg, line=line.rstrip('\n'))
                     process.wait()
                     if process.returncode != 0:
-                        logger.error(f"[{self.pkg}] Logs command exited with {process.returncode}")
+                        events.emit("logs_command_failed", package=self.pkg, exit_code=process.returncode)
                 else:
-                    res = run_cmd(cmd, env=env, logger=logger, capture_output=True, text=True, check=True)
+                    res = run_cmd(cmd, env=env,  capture_output=True, text=True, check=True)
                     if res.stdout:
-                        logger.info(res.stdout.strip())
+                        events.emit("backend_log_stdout", package=self.pkg, output=res.stdout.strip())
                     if res.stderr:
-                        logger.error(res.stderr.strip())
+                        events.emit("backend_log_stderr", package=self.pkg, output=res.stderr.strip())
         except subprocess.CalledProcessError as e:
             details = (e.stderr or e.output or "No output.").strip()
             details_lower = details.lower()
@@ -341,11 +340,11 @@ class DockerComposeBackend(BackendBase):
             
             # Note: We do NOT append details to the message here. The daemon/backend should only provide the structured error.
             # The client dictates representation based on args.verbose.
-            logger.debug(f"Backend error details: {details}")
+            events.emit("backend_error_details", package=self.pkg, details=details)
             raise exc_class(err_msg, details=details)
         except Exception as e:
             err_msg = f"[{self.pkg}] Failed to {action}: {e}"
-            logger.error(err_msg)
+            events.emit("backend_error", package=self.pkg, error=err_msg)
             raise RuntimeError(err_msg)
 
 BACKENDS = {

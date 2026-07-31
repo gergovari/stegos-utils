@@ -1,12 +1,11 @@
 import json
-import logging
+from steglib import events
 import os
 import socket
 import socketserver
 import http.server
 from urllib.parse import urlparse, parse_qs
 
-logger = logging.getLogger(__name__)
 
 class StegRequestHandler(http.server.BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
@@ -86,7 +85,7 @@ class StegServerApp:
                 handler.end_headers()
                 handler.wfile.write(resp_bytes)
             except Exception as e:
-                logger.exception("Error handling request")
+                events.emit("log_exception", message="Error handling request")
                 handler.send_response(500)
                 handler.end_headers()
                 handler.wfile.write(json.dumps({"error": str(e)}).encode("utf-8"))
@@ -107,11 +106,11 @@ class StegServerApp:
             os.remove(socket_path)
         self.server = UnixHTTPServer(socket_path, StegRequestHandler)
         self.server.app = self
-        logger.info(f"Listening on unix socket: {socket_path}")
+        events.emit("log_info", message=f"Listening on unix socket: {socket_path}")
         self.server.serve_forever()
         
     def serve_tcp(self, host, port):
         self.server = ThreadingHTTPServer((host, port), StegRequestHandler)
         self.server.app = self
-        logger.info(f"Listening on tcp {host}:{port}")
+        events.emit("log_info", message=f"Listening on tcp {host}:{port}")
         self.server.serve_forever()

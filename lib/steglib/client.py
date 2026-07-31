@@ -134,14 +134,35 @@ class StegClient:
                     if "details" in msg:
                         err.details = msg["details"]
                     raise err
-                elif msg["type"] == "log":
-                    if msg.get("levelno", logging.INFO) < logging.INFO and not args.get("verbose"):
-                        continue
+                elif msg["type"] == "event":
+                    event_type = msg.get("event")
+                    data = msg.get("data", {})
+                    
+                    if event_type.startswith("log_"):
+                        if event_type == "log_debug" and not args.get("verbose"):
+                            continue
+                        out = data.get("message", "")
+                    elif event_type == "backend_log_line":
+                        out = data.get("line", "")
+                    elif event_type == "starting_package":
+                        out = f"Starting {data.get('package', 'package')}..."
+                    elif event_type == "stopping_package":
+                        out = f"Stopping {data.get('package', 'package')}..."
+                    elif event_type == "downloading_image":
+                        out = f"Downloading image: {data.get('image', '')}"
+                    elif event_type == "checking_image":
+                        out = f"Checking image: {data.get('image', '')}"
+                    else:
+                        if args.get("verbose"):
+                            out = f"Event: {event_type} {data}"
+                        else:
+                            continue
+
                     if console:
-                        console.print(msg.get("message"), markup=False)
+                        console.print(out, markup=False)
                     else:
                         import sys
-                        print(msg.get("message"), file=sys.stderr)
+                        print(out, file=sys.stderr)
         finally:
             if status:
                 status.stop()

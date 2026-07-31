@@ -1,8 +1,7 @@
 """Capability injectors for dynamic docker-compose modification."""
 
-import logging
+from steglib import events
 
-logger = logging.getLogger(__name__)
 
 
 class DockerComposeInjector:
@@ -92,12 +91,7 @@ class DockerComposeInjector:
         targeted = self._resolve_targets(services, target_services)
 
         if not targeted:
-            logger.warning(
-                "No matching target services found for injection "
-                "(target_services=%s, available=%s).",
-                target_services,
-                list(services.keys()),
-            )
+            events.emit("injector_no_target_services", targets=target_services, available=list(services.keys()))
             return
 
         # --- env (dict → service.environment) ---
