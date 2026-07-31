@@ -96,6 +96,7 @@ class EventFormatter:
             elif event_type == "cleaned_directories": msg = f"Successfully removed {getattr(event, 'count', 0)} unmanaged directories."
             elif event_type == "reconfigured": msg = f"Successfully reconfigured {getattr(event, 'count', 0)} instance(s) in group '{getattr(event, 'group', '')}'."
             elif event_type == "group_upgraded": msg = f"Successfully upgraded {len(getattr(event, 'instances', []))} instance(s)."
+            elif event_type == "repos_updated": msg = f"Successfully updated {len(getattr(event, 'repos', []))} repository(ies)."
             else:
                 msg = getattr(event, 'message', f"Successfully completed {event_type}")
                 if hasattr(event, 'package') and getattr(event, 'package'): msg = f"Successfully operated on {getattr(event, 'package')}"
@@ -104,7 +105,7 @@ class EventFormatter:
             return
 
         # Info
-        if event_type in ("starting_package", "stopping_package", "removing_instance", "upgrading_and_restarting", "stopping_instance", "directory_deleted", "instance_purged", "cascade_removing_integrations", "instance_up_to_date", "no_instances_upgraded"):
+        if event_type in ("starting_package", "stopping_package", "removing_instance", "upgrading_and_restarting", "stopping_instance", "directory_deleted", "instance_purged", "cascade_removing_integrations", "instance_up_to_date", "no_instances_upgraded", "repo_up_to_date", "restarting_dependent", "integration_removed_no_longer_required", "dependents_found", "log_info"):
             if event_type == "cascade_removing_integrations": msg = "Removing integrations from dependent instances..."
             elif event_type == "instance_up_to_date": msg = f"{getattr(event, 'instance_id', getattr(event, 'package', 'Instance'))} is already up to date."
             elif event_type == "no_instances_upgraded": msg = "No instances needed upgrading."
@@ -113,6 +114,12 @@ class EventFormatter:
             elif event_type == "directory_deleted": msg = f"Deleted {getattr(event, 'path', '')}"
             elif event_type == "starting_package": msg = f"Starting {getattr(event, 'package', getattr(event, 'instance_id', ''))}..."
             elif event_type == "stopping_package": msg = f"Stopping {getattr(event, 'package', getattr(event, 'instance_id', ''))}..."
+            elif event_type == "upgrading_and_restarting": msg = f"Upgrading and restarting {getattr(event, 'instance_id', '')}..."
+            elif event_type == "repo_up_to_date": msg = f"Repository {getattr(event, 'repo', '')} is already up to date."
+            elif event_type == "restarting_dependent": msg = f"Restarting dependent instance {getattr(event, 'instance_id', '')}..."
+            elif event_type == "integration_removed_no_longer_required": msg = f"Removed integration for '{getattr(event, 'capability', '')}' on {getattr(event, 'package', '')} as it is no longer required."
+            elif event_type == "dependents_found": msg = f"Found {len(getattr(event, 'dependents', []))} dependent(s) for {getattr(event, 'provider', '')}."
+            elif event_type == "log_info": msg = getattr(event, 'message', '')
             else:
                 msg = getattr(event, 'message', f"Processing {event_type}...")
                 if hasattr(event, 'package') and getattr(event, 'package'):
@@ -122,15 +129,24 @@ class EventFormatter:
             return
 
         # Warning
-        if event_type in ("no_packages_installed", "integration_missing", "skipping_action", "skipping_repo", "group_not_found", "no_deployer_backend", "integration_disabled_missing_providers"):
+        if event_type in ("no_packages_installed", "integration_missing", "skipping_action", "skipping_repo", "group_not_found", "no_deployer_backend", "integration_disabled_missing_providers", "injector_no_target_services", "unknown_deployer", "missing_compose_file"):
             if event_type == "group_not_found": msg = "No drives initialized. Please run 'steggroup init'."
+            elif event_type == "injector_no_target_services": msg = f"Injector targets {getattr(event, 'targets', [])} not found, available: {getattr(event, 'available', [])}"
+            elif event_type == "unknown_deployer": msg = f"Unknown deployer '{getattr(event, 'deployer', '')}' for package {getattr(event, 'package', '')}."
+            elif event_type == "missing_compose_file": msg = f"Missing docker-compose.yml for {getattr(event, 'package', '')} at {getattr(event, 'path', '')}"
             else: msg = getattr(event, 'message', f"Warning: {event_type}")
             self.console.print(f"[bold yellow]⚠[/bold yellow] [white]{msg}[/white]")
             return
 
         # Error
-        if event_type in ("upgrade_failed", "action_failed", "backend_error", "reconfigure_failed", "command_failed", "cascade_reconfigure_failed", "backend_error_details", "command_failed_msg", "logs_command_failed"):
-            msg = getattr(event, 'message', getattr(event, 'error', getattr(event, 'details', f"Error: {event_type}")))
+        if event_type in ("upgrade_failed", "action_failed", "backend_error", "reconfigure_failed", "command_failed", "cascade_reconfigure_failed", "backend_error_details", "command_failed_msg", "logs_command_failed", "circular_dependency", "directory_delete_failed", "network_precreate_error", "network_precreate_failed", "stop_failed", "log_exception"):
+            if event_type == "circular_dependency": msg = f"Circular dependency detected involving {getattr(event, 'package', '')}"
+            elif event_type == "directory_delete_failed": msg = f"Failed to delete directory {getattr(event, 'path', '')}: {getattr(event, 'error', '')}"
+            elif event_type == "network_precreate_error": msg = f"Failed to pre-create networks: {getattr(event, 'error', '')}"
+            elif event_type == "network_precreate_failed": msg = f"[{getattr(event, 'package', '')}] Failed to pre-create networks: {getattr(event, 'error', '')}"
+            elif event_type == "stop_failed": msg = f"Failed to stop instance {getattr(event, 'instance_id', '')}"
+            elif event_type == "log_exception": msg = getattr(event, 'message', '')
+            else: msg = getattr(event, 'message', getattr(event, 'error', getattr(event, 'details', f"Error: {event_type}")))
             self.console.print(f"[bold red]✖[/bold red] [white]{msg}[/white]")
             return
 
@@ -143,6 +159,12 @@ class EventFormatter:
             return
         if event_type == "backend_log_line":
             self.console.print(getattr(event, 'line', ''), style="dim", highlight=False)
+            return
+        if event_type == "backend_log_stdout":
+            self.console.print(getattr(event, 'output', ''), highlight=False)
+            return
+        if event_type == "backend_log_stderr":
+            self.console.print(f"[red]{getattr(event, 'output', '')}[/red]", highlight=False)
             return
         if event_type.startswith("log_"):
             if event_type == "log_debug" and not self.verbose: return
