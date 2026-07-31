@@ -247,10 +247,12 @@ class PackageManager:
                                 pkg_dir, cli_conf={}, reconfigure=False,
                                 non_interactive=True, instance_id=dep_id
                             )
-                            logger.info("[%s] Restarting dependent instance...", dep_id)
                             from steglib.lifecycle import LifecycleManager
                             lm = LifecycleManager(self.engine.group_name)
-                            lm.execute("start", dep_id, False, verbose)
+                            status_res = lm.execute("status", dep_id)
+                            if status_res and dep_id in status_res and status_res[dep_id].get("state") == "running":
+                                logger.info("[%s] Restarting dependent instance...", dep_id)
+                                lm.execute("start", dep_id, False, verbose)
                         except Exception as e:
                             logger.warning("Failed to reconfigure '%s': %s", dep_id, e)
                             
@@ -404,9 +406,13 @@ class PackageManager:
                         pkg_dir, cli_conf={}, reconfigure=False,
                         non_interactive=True, instance_id=dep_id,
                     )
-                    logger.info("[%s] Reconfigured dependent instance. Restarting...", dep_id)
                     from steglib.lifecycle import LifecycleManager
                     lm = LifecycleManager(self.engine.group_name)
-                    lm.execute("start", dep_id, False, verbose)
+                    status_res = lm.execute("status", dep_id)
+                    if status_res and dep_id in status_res and status_res[dep_id].get("state") == "running":
+                        logger.info("[%s] Reconfigured dependent instance. Restarting...", dep_id)
+                        lm.execute("start", dep_id, False, verbose)
+                    else:
+                        logger.info("[%s] Reconfigured dependent instance.", dep_id)
                 except Exception:
                     logger.warning("Failed to reconfigure '%s'.", dep_id)

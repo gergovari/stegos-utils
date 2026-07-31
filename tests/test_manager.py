@@ -229,7 +229,7 @@ def test_upgrade_cascade(mock_lm, mock_instance, mock_isdir, mock_listdir, mock_
     mock_instance.return_value = mock_inst_obj
     
     # Mock status as running
-    mock_lm.return_value.execute.return_value = {"inst1": {"state": "running", "running": 1, "total": 1}}
+    mock_lm.return_value.execute.return_value = {"inst1": {"state": "running", "running": 1, "total": 1}, "dep1": {"state": "running", "running": 1, "total": 1}}
     
     manager = PackageManager(engine_mock)
     manager._find_dependents = Mock(return_value={"inst1": ["dep1"]})
@@ -297,9 +297,12 @@ def test_cascade_remove(mock_lm, mock_instance):
     mock_inst_obj.read_conf.return_value = {"enabled_capabilities": {"cap1": ["inst1", "inst3"]}}
     mock_instance.return_value = mock_inst_obj
     
+    # Mock status as running for inst2
+    mock_lm.return_value.execute.return_value = {"inst2": {"state": "running", "running": 1, "total": 1}}
+    
     manager = PackageManager(engine_mock)
     manager._cascade_remove_integration("inst2", ["inst1"])
     
     mock_inst_obj.write_conf.assert_called_once_with({"enabled_capabilities": {"cap1": ["inst3"]}})
     engine_mock.process_package.assert_called_once()
-    mock_lm.return_value.execute.assert_called_once_with("start", "inst2", False, False)
+    mock_lm.return_value.execute.assert_has_calls([call("status", "inst2"), call("start", "inst2", False, False)], any_order=False)
