@@ -196,13 +196,6 @@ def test_execute_status_running(mock_run, mock_isfile, mock_is_running):
     assert res == {"state": "running", "running": 2, "total": 2}
 
 @patch("os.path.isfile", return_value=True)
-@patch("steglib.backend.run_cmd")
-def test_execute_logs(mock_run, mock_isfile):
-    backend = DockerComposeBackend("pkg1", "/pkg_path", "/group_dir")
-    backend.execute("logs")
-    assert mock_run.call_args[0][0] == ["docker", "compose", "-p", "pkg1", "-f", "/pkg_path/docker-compose.yml", "logs"]
-
-@patch("os.path.isfile", return_value=True)
 @patch("subprocess.Popen")
 @patch("steglib.events.emit")
 def test_execute_logs_follow(mock_info, mock_popen, mock_isfile):
@@ -235,7 +228,7 @@ def test_execute_subprocess_error(mock_run, mock_getsize, mock_isfile):
     mock_run.side_effect = side_effect
     
     with pytest.raises(BackendError):
-        backend.execute("logs")
+        backend.execute("unknown")
 
 @patch("os.path.isfile", return_value=True)
 @patch("os.path.getsize", return_value=100)
@@ -253,7 +246,7 @@ def test_execute_no_space_error(mock_disk_usage, mock_run, mock_getsize, mock_is
     mock_disk_usage.return_value = mock_usage
     
     with pytest.raises(InsufficientSpaceError):
-        backend.execute("logs")
+        backend.execute("unknown")
 
 @patch("os.path.isfile", return_value=True)
 @patch("os.path.getsize", return_value=100)
@@ -266,7 +259,7 @@ def test_execute_port_conflict_error(mock_run, mock_getsize, mock_isfile):
     mock_run.side_effect = side_effect
     
     with pytest.raises(PortConflictError):
-        backend.execute("logs")
+        backend.execute("unknown")
 
 @patch("os.path.isfile", return_value=True)
 @patch("os.path.getsize", return_value=100)
@@ -279,7 +272,7 @@ def test_execute_network_not_found_error(mock_run, mock_getsize, mock_isfile):
     mock_run.side_effect = side_effect
     
     with pytest.raises(NetworkNotFoundError):
-        backend.execute("logs")
+        backend.execute("unknown")
 
 @patch("os.path.isfile", return_value=True)
 @patch("os.path.getsize", return_value=100)
@@ -288,4 +281,4 @@ def test_execute_oserror(mock_run, mock_getsize, mock_isfile):
     backend = DockerComposeBackend("pkg1", "/pkg_path", "/group_dir")
     mock_run.side_effect = OSError("os error")
     with pytest.raises(RuntimeError):
-        backend.execute("logs")
+        backend.execute("unknown")

@@ -1,15 +1,9 @@
-import re
-
 with open("tests/test_backend.py", "r") as f:
-    lines = f.readlines()
+    content = f.read()
 
-out = []
-for line in lines:
-    if line.startswith("@patch(\"steglib.backend.logger"):
-        if "steglib.events.emit" not in "".join(out[-2:]):
-            out.append('@patch("steglib.events.emit")\n')
-    else:
-        out.append(line)
+# Replace backend.execute("logs") with backend.execute("unknown") in the error tests
+content = content.replace('backend.execute("logs")', 'backend.execute("unknown")')
+content = content.replace('backend.execute("logs", follow=True)', 'backend.execute("logs", follow=True)') # Make sure this wasn't broken
 
 with open("tests/test_backend.py", "w") as f:
-    f.writelines(out)
+    f.write(content)

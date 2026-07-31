@@ -193,7 +193,7 @@ class DockerComposeBackend(BackendBase):
                         printed = True
                     run_cmd(["docker", "save", "-o", cache_path, image], env=env,  error_msg=f"Failed to save image {image} to cache", check=True)
                     
-    def execute(self, action, if_created=False, verbose=False, follow=False):
+    def execute(self, action, if_created=False, verbose=False, follow=False, tails="all"):
         """Execute a docker-compose command (e.g. start, stop, restart, logs, down)."""
         compose_file = os.path.join(self.pkg_path, "docker-compose.yml")
         if not os.path.isfile(compose_file):
@@ -255,6 +255,8 @@ class DockerComposeBackend(BackendBase):
             cmd.append("logs")
             if follow:
                 cmd.append("-f")
+            if tails and tails != "all":
+                cmd.extend(["--tail", str(tails)])
         else:
             cmd.append(action)
             
@@ -284,7 +286,7 @@ class DockerComposeBackend(BackendBase):
                 return {"state": state, "running": running, "total": total}
             else:
                 # For logs, we must capture the output so the daemon sends it to the client
-                if action == "logs" and follow:
+                if action == "logs":
                     process = subprocess.Popen(cmd, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
                     for line in iter(process.stdout.readline, ''):
                         events.emit(BackendLogLineEvent(package=self.pkg, line=line.rstrip('\n')))

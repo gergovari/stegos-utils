@@ -31,13 +31,19 @@ def main():
     }
     
     for act, help_text in actions.items():
-        kwargs = {"help": help_text, "formatter_class": formatter_class, "parents": [parent_parser]}
-        p = subparsers.add_parser(act, **kwargs)
-        p.add_argument("package", nargs="?", help="Specific package to perform action on (defaults to all)")
-        p.add_argument("--group", help="Target group (optional if only one exists)")
-        p.add_argument("--if-created", action="store_true", help=argparse.SUPPRESS)
         if act == "logs":
+            p = subparsers.add_parser(act, help=help_text, formatter_class=formatter_class, parents=[parent_parser])
+            p.add_argument("package", nargs="?", help="Specific package to view logs for")
+            p.add_argument("--group", help="Target group (optional if only one exists)")
+            p.add_argument("--if-created", action="store_true", help=argparse.SUPPRESS)
             p.add_argument("-f", "--follow", action="store_true", help="Follow log output")
+            p.add_argument("-t", "--tails", type=str, default="all", help="Number of lines to show from the end of the logs (default: all)")
+        else:
+            kwargs = {"help": help_text, "formatter_class": formatter_class, "parents": [parent_parser]}
+            p = subparsers.add_parser(act, **kwargs)
+            p.add_argument("package", nargs="?", help="Specific package to perform action on (defaults to all)")
+            p.add_argument("--group", help="Target group (optional if only one exists)")
+            p.add_argument("--if-created", action="store_true", help=argparse.SUPPRESS)
         
     args = parser.parse_args()
     client = init_cli_client(args)
@@ -53,6 +59,7 @@ def main():
         }
         if action == "logs":
             payload["follow"] = args.follow
+            payload["tails"] = args.tails
             
         result = client.call_interactive("ctl.execute", payload)
         

@@ -32,7 +32,7 @@ class LifecycleManager:
         self.group_name = GroupManager.resolve(group_prefix, interactive_cb)
         self.cont_dir = os.path.join(PERSISTENT_DIR, self.group_name)
 
-    def execute(self, action, package_name=None, if_created=False, follow=False):
+    def execute(self, action: str, package_name: str | list = None, if_created: bool = False, verbose: bool = False, follow: bool = False, tails: str = "all"):
         """Execute an action on a specific package or all packages in the group.
 
         Args:
@@ -97,7 +97,9 @@ class LifecycleManager:
         # Resolve target package or instances if specified
         if package_name:
             target_instances = []
-            if package_name in all_pkgs:
+            if isinstance(package_name, list):
+                target_instances = [p for p in package_name if p in all_pkgs]
+            elif package_name in all_pkgs:
                 target_instances = [package_name]
             else:
                 for pkg in all_pkgs:
@@ -109,9 +111,10 @@ class LifecycleManager:
                         pass
 
                 if not target_instances:
-                    raise ValueError(f"No instance or package named '{package_name}' found in group '{self.group_name}'.")
+                    if isinstance(package_name, str):
+                        raise ValueError(f"No instance or package named '{package_name}' found in group '{self.group_name}'.")
 
-                if len(target_instances) > 1:
+                if len(target_instances) > 1 and not isinstance(package_name, list):
                     # Let the caller (CLI/API) decide how to handle multiple instances
                     raise MultipleInstancesError(target_instances)
 
@@ -208,7 +211,7 @@ class LifecycleManager:
             if backend_cls:
                 pkg_path = os.path.join(self.cont_dir, pkg, BACKEND_DIR)
                 backend = backend_cls(pkg, pkg_path, self.cont_dir)
-                return backend.execute(action, if_created, follow=follow)
+                return backend.execute(action, if_created, follow=follow, tails=tails)
             else:
                 events.emit(UnknownDeployerEvent(package=pkg, deployer=deployer))
                 return None

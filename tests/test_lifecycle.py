@@ -40,7 +40,7 @@ def test_lifecycle_start_dependency_order(mock_env):
     execution_order = []
     lock = threading.Lock()
     
-    def fake_execute(self, action, if_created, follow=False):
+    def fake_execute(self, action, if_created, follow=False, tails="all"):
         # Add slight artificial delay to make sure thread pool would race if dependencies weren't honored
         time.sleep(0.05)
         with lock:
@@ -72,7 +72,7 @@ def test_lifecycle_stop_reverse_dependency_order(mock_env):
     execution_order = []
     lock = threading.Lock()
     
-    def fake_execute(self, action, if_created, follow=False):
+    def fake_execute(self, action, if_created, follow=False, tails="all"):
         time.sleep(0.05)
         with lock:
             execution_order.append(self.pkg)
@@ -105,7 +105,7 @@ def test_lifecycle_wait_for_start_false(mock_env):
     execution_order = []
     lock = threading.Lock()
     
-    def fake_execute(self, action, if_created, follow=False):
+    def fake_execute(self, action, if_created, follow=False, tails="all"):
         if self.pkg == "pkgA":
             time.sleep(0.1) # A is slow
         with lock:
@@ -138,7 +138,7 @@ def test_lifecycle_failure_cascading(mock_env):
     execution_order = []
     lock = threading.Lock()
     
-    def fake_execute(self, action, if_created, follow=False):
+    def fake_execute(self, action, if_created, follow=False, tails="all"):
         if self.pkg == "pkgA":
             raise RuntimeError("Backend failed!")
         with lock:
