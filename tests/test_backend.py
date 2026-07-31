@@ -1,6 +1,6 @@
 import os
 import pytest
-from unittest.mock import patch, mock_open, MagicMock, call
+from unittest.mock import patch, mock_open, MagicMock, call, ANY
 import subprocess
 
 from steglib.backend import BackendBase, DockerComposeBackend, BACKENDS
@@ -84,7 +84,11 @@ def test_sync_docker_cache_bad_yaml(mock_file):
 def test_execute_missing_file(mock_error, mock_isfile):
     backend = DockerComposeBackend("pkg1", "/pkg_path", "/group_dir")
     backend.execute("start")
-    mock_error.assert_called_with("missing_compose_file", package="pkg1", path="/pkg_path")
+    mock_error.assert_called_with(ANY)
+    emitted = mock_error.call_args[0][0]
+    assert emitted.event_type == "missing_compose_file"
+    assert emitted.package == "pkg1"
+    assert emitted.path == "/pkg_path"
 
 @patch("os.path.isfile", return_value=True)
 @patch("os.path.getsize", return_value=100)
@@ -210,8 +214,8 @@ def test_execute_logs_follow(mock_info, mock_popen, mock_isfile):
     
     backend.execute("logs", follow=True)
     assert mock_popen.call_args[0][0] == ["docker", "compose", "-p", "pkg1", "-f", "/pkg_path/docker-compose.yml", "logs", "-f"]
-    mock_info.assert_any_call("backend_log_line", package="pkg1", line="log1")
-    mock_info.assert_any_call("backend_log_line", package="pkg1", line="log2")
+    assert any(call_args[0][0].event_type == "backend_log_line" and call_args[0][0].line == "log1" for call_args in mock_info.call_args_list)
+    assert any(call_args[0][0].event_type == "backend_log_line" and call_args[0][0].line == "log2" for call_args in mock_info.call_args_list)
 
 @patch("os.path.isfile", return_value=True)
 @patch("steglib.backend.run_cmd")

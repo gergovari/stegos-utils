@@ -1,3 +1,4 @@
+from steglib.event_types import *
 """Capability injectors for dynamic docker-compose modification."""
 
 from steglib import events
@@ -91,7 +92,7 @@ class DockerComposeInjector:
         targeted = self._resolve_targets(services, target_services)
 
         if not targeted:
-            events.emit("injector_no_target_services", targets=target_services, available=list(services.keys()))
+            events.emit(InjectorNoTargetServicesEvent(targets=target_services, available=list(services.keys())))
             return
 
         # --- env (dict → service.environment) ---

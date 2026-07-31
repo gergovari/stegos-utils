@@ -10,8 +10,7 @@ from steglib.constants import BACKEND_DIR, GLOBAL_CONF_FILENAME
 from steglib.engine import PackageNotFoundError
 from steglib.instance import Instance
 
-
-
+from steglib.event_types import *
 class PackageManager:
     """High-level package manager bridging the engine and CLI/API."""
 
@@ -71,7 +70,7 @@ class PackageManager:
                 pkg_dir, cli_conf, reconfigure, non_interactive, resolved_id, interactive_cb
             )
             display_name = inst_id if inst_id else (resolved_id if resolved_id else pkg)
-            events.emit("package_installed", package=pkg, instance_id=display_name)
+            events.emit(PackageInstalledEvent(package=pkg, instance_id=display_name))
             
             manifest = load_manifest(pkg_dir)
             if manifest:
@@ -127,12 +126,12 @@ class PackageManager:
                                 lm = LifecycleManager(self.engine.group_name)
                                 status_res = lm.execute("status", dep_id)
                                 if status_res and dep_id in status_res and status_res[dep_id].get("state") == "running":
-                                    events.emit("dependent_restarted", instance_id=dep_id)
+                                    events.emit(DependentRestartedEvent(instance_id=dep_id))
                                     lm.execute("start", dep_id, False, False)
                                 else:
-                                    events.emit("dependent_reconfigured", instance_id=dep_id)
+                                    events.emit(DependentReconfiguredEvent(instance_id=dep_id))
                     except Exception as e:
-                        events.emit("cascade_reconfigure_failed", instance_id=dep_id, error=str(e))
+                        events.emit(CascadeReconfigureFailedEvent(instance_id=dep_id, error=str(e)))
 
     def reconfigure(self, instance_ids=None, interactive_cb=None):
         """Reconfigures one or more instances."""
@@ -159,9 +158,9 @@ class PackageManager:
                 )
                 count += 1
             except PackageNotFoundError:
-                events.emit("reconfigure_failed", package=pkg_name, instance_id=instance_id)
+                events.emit(ReconfigureFailedEvent(package=pkg_name, instance_id=instance_id))
         
-        events.emit("reconfigured", count=count, group=self.engine.group_name)
+        events.emit(ReconfiguredEvent(count=count, group=self.engine.group_name))
 
     def remove(self, instance_ids, purge=False, cascade=False, interactive_cb=None, verbose=False):
         """Removes one or more package instances."""
@@ -174,7 +173,7 @@ class PackageManager:
         if deps:
             all_dependents = []
             for provider_id, dependents in deps.items():
-                events.emit("dependents_found", provider=provider_id, dependents=dependents)
+                events.emit(DependentsFoundEvent(provider=provider_id, dependents=dependents))
                 for d in dependents:
                     if d not in all_dependents:
                         all_dependents.append(d)
@@ -196,29 +195,29 @@ class PackageManager:
                 raise RuntimeError("Aborting removal due to active dependents.")
 
         for real_id in real_ids:
-            events.emit("stopping_instance", instance_id=real_id)
+            events.emit(StoppingInstanceEvent(instance_id=real_id))
             try:
                 from steglib.lifecycle import LifecycleManager
                 lm = LifecycleManager(self.engine.group_name)
                 lm.execute("stop", real_id, False, verbose)
             except Exception:
-                events.emit("stop_failed", instance_id=real_id)
+                events.emit(StopFailedEvent(instance_id=real_id))
 
-            events.emit("removing_instance", instance_id=real_id)
+            events.emit(RemovingInstanceEvent(instance_id=real_id))
 
             instance_dir = os.path.join(self.engine.group_dir, real_id)
 
             if purge:
                 if os.path.exists(instance_dir):
                     shutil.rmtree(instance_dir)
-                events.emit("instance_purged", instance_id=real_id)
+                events.emit(InstancePurgedEvent(instance_id=real_id))
             else:
                 backend_dir = os.path.join(instance_dir, BACKEND_DIR)
                 for fname in [".stegpkg-state.json", "docker-compose.yml"]:
                     fpath = os.path.join(backend_dir, fname)
                     if os.path.exists(fpath):
                         os.remove(fpath)
-                events.emit("instance_uninstalled", instance_id=real_id)
+                events.emit(InstanceUninstalledEvent(instance_id=real_id))
 
     def upgrade(self, instance_ids=None, interactive_cb=None, verbose=False):
         """Upgrades one or more instances."""
@@ -266,7 +265,7 @@ class PackageManager:
                 pkg_dir = self.engine.find_package_dir(pkg_name)
                 is_interactive = bool(interactive_cb)
                 
-                events.emit("checking_upgrades", instance_id=instance_id)
+                events.emit(CheckingUpgradesEvent(instance_id=instance_id))
                 self.engine.process_package(
                     pkg_dir, cli_conf={}, reconfigure=False,
                     non_interactive=not is_interactive, instance_id=instance_id,
@@ -277,17 +276,17 @@ class PackageManager:
                 
                 if before_hash != after_hash:
                     if was_running:
-                        events.emit("upgrading_and_restarting", instance_id=instance_id)
+                        events.emit(UpgradingAndRestartingEvent(instance_id=instance_id))
                         from steglib.lifecycle import LifecycleManager
                         lm = LifecycleManager(self.engine.group_name)
                         lm.execute("start", instance_id, True, verbose)
                     else:
-                        events.emit("instance_upgraded", instance_id=instance_id)
+                        events.emit(InstanceUpgradedEvent(instance_id=instance_id))
                     upgraded_instances.append(instance_id)
                 else:
-                    events.emit("instance_up_to_date", instance_id=instance_id)
+                    events.emit(InstanceUpToDateEvent(instance_id=instance_id))
             except Exception as exc:
-                events.emit("upgrade_failed", package=pkg_name, instance_id=instance_id, error=str(exc))
+                events.emit(UpgradeFailedEvent(package=pkg_name, instance_id=instance_id, error=str(exc)))
 
         if upgraded_instances:
             # Cascade reconfigure dependents
@@ -300,7 +299,7 @@ class PackageManager:
             for dep_id in all_dependents:
                 if dep_id in upgraded_instances:
                     continue
-                events.emit("cascade_reconfiguring", instance_id=dep_id)
+                events.emit(CascadeReconfiguringEvent(instance_id=dep_id))
                 inst = Instance(self.engine.group_name, dep_id)
                 if inst.is_installed:
                     pkg_name = inst.package_name
@@ -315,14 +314,14 @@ class PackageManager:
                             lm = LifecycleManager(self.engine.group_name)
                             status_res = lm.execute("status", dep_id)
                             if status_res and dep_id in status_res and status_res[dep_id].get("state") == "running":
-                                events.emit("restarting_dependent", instance_id=dep_id)
+                                events.emit(RestartingDependentEvent(instance_id=dep_id))
                                 lm.execute("start", dep_id, False, verbose)
                         except Exception as e:
-                            events.emit("cascade_reconfigure_failed", instance_id=dep_id, error=str(e))
+                            events.emit(CascadeReconfigureFailedEvent(instance_id=dep_id, error=str(e)))
                             
-            events.emit("group_upgraded", group=self.engine.group_name, instances=upgraded_instances)
+            events.emit(GroupUpgradedEvent(group=self.engine.group_name, instances=upgraded_instances))
         else:
-            events.emit("no_instances_upgraded", group=self.engine.group_name)
+            events.emit(NoInstancesUpgradedEvent(group=self.engine.group_name))
 
     def update(self):
         """Updates app repositories via git pull."""
@@ -333,49 +332,49 @@ class PackageManager:
         for name in os.listdir(self.engine.repo_dir):
             repo_path = os.path.join(self.engine.repo_dir, name)
             if not os.path.isdir(os.path.join(repo_path, ".git")):
-                events.emit("skipping_repo", repo=name)
+                events.emit(SkippingRepoEvent(repo=name))
                 continue
-            events.emit("checking_updates", repo=name)
+            events.emit(CheckingUpdatesEvent(repo=name))
             try:
                 res = run_cmd(
                     ["git", "-c", f"safe.directory={repo_path}", "pull", "--rebase", "--autostash"], cwd=repo_path, error_msg=f"Failed to update '{name}'.", check=True
                 )
                 if "Already up to date." not in (res.stdout or ""):
-                    events.emit("repo_updated", repo=name)
+                    events.emit(RepoUpdatedEvent(repo=name))
                     updated_repos.append(name)
                 else:
-                    events.emit("repo_up_to_date", repo=name)
+                    events.emit(RepoUpToDateEvent(repo=name))
             except Exception:
                 pass
                 
         if updated_repos:
-            events.emit("repos_updated", repos=updated_repos)
+            events.emit(ReposUpdatedEvent(repos=updated_repos))
         else:
-            events.emit("all_repos_up_to_date")
+            events.emit(AllReposUpToDateEvent())
 
     def list_packages(self):
         """Lists installed packages."""
         if not os.path.isdir(self.engine.group_dir):
-            events.emit("no_packages_installed", group=self.engine.group_name)
+            events.emit(NoPackagesInstalledEvent(group=self.engine.group_name))
             return
 
-        events.emit("installed_packages_header", group=self.engine.group_name)
+        events.emit(InstalledPackagesHeaderEvent(group=self.engine.group_name))
         count = 0
         for instance_id in sorted(os.listdir(self.engine.group_dir)):
             inst = Instance(self.engine.group_name, instance_id)
             if not inst.is_installed:
                 continue
             pkg_name = inst.package_name or "unknown"
-            events.emit("package_listed", instance_id=instance_id, package=pkg_name)
+            events.emit(PackageListedEvent(instance_id=instance_id, package=pkg_name))
             count += 1
 
         if count == 0:
-            events.emit("no_packages")
+            events.emit(NoPackagesEvent())
 
     def clean(self, auto_confirm=False, interactive_cb=None):
         """Removes unmanaged instance directories."""
         if not os.path.isdir(self.engine.group_dir):
-            events.emit("group_not_found", group=self.engine.group_dir)
+            events.emit(GroupNotFoundEvent(group=self.engine.group_dir))
             return
 
         unmanaged = []
@@ -390,12 +389,12 @@ class PackageManager:
                 unmanaged.append(path)
 
         if not unmanaged:
-            events.emit("no_unmanaged_directories", group=self.engine.group_name)
+            events.emit(NoUnmanagedDirectoriesEvent(group=self.engine.group_name))
             return
 
-        events.emit("unmanaged_directories_header")
+        events.emit(UnmanagedDirectoriesHeaderEvent())
         for path in unmanaged:
-            events.emit("unmanaged_directory", path=path)
+            events.emit(UnmanagedDirectoryEvent(path=path))
 
         if auto_confirm:
             ans = "y"
@@ -409,13 +408,13 @@ class PackageManager:
             for path in unmanaged:
                 try:
                     shutil.rmtree(path)
-                    events.emit("directory_deleted", path=path)
+                    events.emit(DirectoryDeletedEvent(path=path))
                     count += 1
                 except OSError as e:
-                    events.emit("directory_delete_failed", path=path, error=str(e))
-            events.emit("cleaned_directories", count=count)
+                    events.emit(DirectoryDeleteFailedEvent(path=path, error=str(e)))
+            events.emit(CleanedDirectoriesEvent(count=count))
         else:
-            events.emit("clean_aborted")
+            events.emit(CleanAbortedEvent())
 
     def _find_dependents(self, target_ids):
         """Find instances that depend on any of target_ids via capabilities."""
@@ -443,7 +442,7 @@ class PackageManager:
 
     def _cascade_remove_integration(self, dep_id, removed_ids, verbose=False):
         """Reconfigure a dependent instance to drop integrations to removed IDs."""
-        events.emit("cascade_removing_integrations", instance_id=dep_id)
+        events.emit(CascadeRemovingIntegrationsEvent(instance_id=dep_id))
         inst = Instance(self.engine.group_name, dep_id)
         conf = inst.read_conf()
         enabled = conf.get("enabled_capabilities", {})
@@ -473,9 +472,9 @@ class PackageManager:
                     lm = LifecycleManager(self.engine.group_name)
                     status_res = lm.execute("status", dep_id)
                     if status_res and dep_id in status_res and status_res[dep_id].get("state") == "running":
-                        events.emit("dependent_restarted", instance_id=dep_id)
+                        events.emit(DependentRestartedEvent(instance_id=dep_id))
                         lm.execute("start", dep_id, False, verbose)
                     else:
-                        events.emit("dependent_reconfigured", instance_id=dep_id)
+                        events.emit(DependentReconfiguredEvent(instance_id=dep_id))
                 except Exception:
-                    events.emit("reconfigure_failed", instance_id=dep_id)
+                    events.emit(ReconfigureFailedEvent(instance_id=dep_id))

@@ -1,6 +1,7 @@
 import subprocess
 from steglib import events
 
+from steglib.event_types import *
 def run_cmd(cmd, error_msg=None, quiet_fail=False, **kwargs):
     """
     Executes a shell command. Automatically captures output.
@@ -18,13 +19,13 @@ def run_cmd(cmd, error_msg=None, quiet_fail=False, **kwargs):
     
     if result.returncode != 0:
         if error_msg:
-            events.emit("command_failed_msg", command=" ".join(cmd), msg=error_msg)
+            events.emit(CommandFailedMsgEvent(command=" ".join(cmd)), msg=error_msg)
             
         if not quiet_fail:
             err_out = result.stderr.strip() if result.stderr else ""
             std_out = result.stdout.strip() if result.stdout else ""
             details = err_out or std_out or "No output."
-            events.emit("command_failed", command=" ".join(cmd), details=details)
+            events.emit(CommandFailedEvent(command=" ".join(cmd)), details=details)
         
         if check:
             # Raise the exception like check=True would

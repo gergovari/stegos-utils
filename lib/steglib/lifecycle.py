@@ -8,6 +8,7 @@ from steglib.group import GroupManager
 from steglib.instance import Instance
 
 
+from steglib.event_types import *
 class MultipleInstancesError(Exception):
     """Raised when multiple instances match a requested package name.
 
@@ -68,7 +69,7 @@ class LifecycleManager:
                             if p in graph and p != pkg:
                                 graph[pkg].add(p)
                             elif p not in graph and action == "start":
-                                events.emit("integration_missing", consumer=pkg, capability=cap_name, missing_provider=p)
+                                events.emit(IntegrationMissingEvent(consumer=pkg, capability=cap_name, missing_provider=p))
             except (json.JSONDecodeError, OSError, KeyError):
                 pass
 
@@ -79,7 +80,7 @@ class LifecycleManager:
 
         def visit(n):
             if n in temp:
-                events.emit("circular_dependency", package=n)
+                events.emit(CircularDependencyEvent(package=n))
                 return
             if n not in visited:
                 temp.add(n)
@@ -165,9 +166,9 @@ class LifecycleManager:
                                     if ext_name and ext_name != "default":
                                         run_cmd(["docker", "network", "create", "--label", f"com.docker.compose.network={ext_name}", ext_name], env=env, check=False, quiet_fail=True)
                         except Exception as e:
-                            events.emit("network_precreate_failed", package=pkg, error=str(e))
+                            events.emit(NetworkPrecreateFailedEvent(package=pkg, error=str(e)))
             except Exception as e:
-                events.emit("network_precreate_error", error=str(e))
+                events.emit(NetworkPrecreateErrorEvent(error=str(e)))
 
         # Resolve exact dependencies for the selected subset of packages
         dependencies = {pkg: set() for pkg in packages_to_run}
@@ -200,7 +201,7 @@ class LifecycleManager:
             inst = Instance(self.group_name, pkg)
             if not inst.is_installed:
                 if package_name:
-                    events.emit("no_deployer_backend", package=pkg)
+                    events.emit(NoDeployerBackendEvent(package=pkg))
                 return None
             deployer = inst.deployer
             backend_cls = BACKENDS.get(deployer)
@@ -209,7 +210,7 @@ class LifecycleManager:
                 backend = backend_cls(pkg, pkg_path, self.cont_dir)
                 return backend.execute(action, if_created, follow=follow)
             else:
-                events.emit("unknown_deployer", package=pkg, deployer=deployer)
+                events.emit(UnknownDeployerEvent(package=pkg, deployer=deployer))
                 return None
 
         def worker(pkg):
@@ -222,7 +223,7 @@ class LifecycleManager:
                     condition.notify_all()
             except Exception as e:
                 with lock:
-                    events.emit("action_failed", package=pkg, action=action, error=str(e))
+                    events.emit(ActionFailedEvent(package=pkg, action=action, error=str(e)))
                     failed.add(pkg)
                     condition.notify_all()
 
@@ -236,7 +237,7 @@ class LifecycleManager:
                             if p not in launched and p not in failed:
                                 if any(dep in failed for dep in dependencies[p]):
                                     failed.add(p)
-                                    events.emit("skipping_action", package=p, action=action, reason="dependencies failed")
+                                    events.emit(SkippingActionEvent(package=p, action=action, reason="dependencies failed"))
                                     condition.notify_all()
                         
                         ready = [

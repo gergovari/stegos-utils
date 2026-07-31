@@ -5,6 +5,7 @@ import hashlib
 from steglib import events
 
 
+from steglib.event_types import *
 def _get_network_params(group_dir: str) -> list:
     """Generate unique deterministic networking parameters for this group's dockerd."""
     group_name = os.path.basename(group_dir)
@@ -98,9 +99,9 @@ def ensure_running(group_dir: str, verbose: bool = False) -> dict:
                 
         # 3. Start the isolated daemon
         if verbose:
-            events.emit("log_info", message=f"  └── ⏳ Starting isolated Docker daemon for group: {os.path.basename(group_dir)}...")
+            events.emit(LogInfoEvent(message=f"  └── ⏳ Starting isolated Docker daemon for group: {os.path.basename(group_dir)}..."))
         else:
-            events.emit("log_info", message="  └── ⏳ Starting backend...")
+            events.emit(DockerdStartingBackendEvent())
         
         cmd = [
             "dockerd",
@@ -128,7 +129,7 @@ def ensure_running(group_dir: str, verbose: bool = False) -> dict:
             last_err = res.stderr.strip()
                 
         # If we got here, it timed out
-        events.emit("log_debug", message=f"Failed to start isolated Docker daemon. Check logs at {log_file}")
+        events.emit(LogDebugEvent(message=f"Failed to start isolated Docker daemon. Check logs at {log_file}"))
         with open(log_file, "a") as f:
             f.write(f"\n=== docker info failed after {timeout}s ===\n{last_err}\n")
         raise RuntimeError(f"Isolated Docker daemon failed to start for {group_dir}")

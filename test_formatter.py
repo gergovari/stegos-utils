@@ -1,19 +1,19 @@
 from steglib.client import EventFormatter
 from rich.console import Console
-
 console = Console()
-status = console.status("Executing...")
-formatter = EventFormatter(console, status, verbose=True)
+formatter = EventFormatter(console, None, verbose=True)
 
 events = [
-    ("checking_updates", {}),
-    ("package_installed", {"package": "nginx-proxy"}),
-    ("starting_package", {"package": "whoami"}),
+    ("all_repos_up_to_date", {}),
+    ("no_unmanaged_directories", {}),
     ("instance_up_to_date", {"instance": "my-instance"}),
-    ("upgrade_failed", {"error": "Some bad error"}),
+    ("no_instances_upgraded", {}),
+    ("group_not_found", {}),
+    ("cascade_removing_integrations", {}),
+    ("dependent_reconfigured", {"instance": "nginx-proxy"}),
     ("installed_packages_header", {}),
-    ("package_listed", {"instance_id": "nginx-proxy-1", "package_name": "nginx-proxy", "status": "running"}),
-    ("package_listed", {"instance_id": "whoami-2", "package_name": "whoami", "status": "stopped"}),
+    ("package_listed", {"instance_id": "whoami-35e7750e", "package": "whoami"}),
+    ("package_listed", {"instance_id": "nginx-proxy-805c321c", "package": "nginx-proxy"}),
 ]
 
 for event, data in events:

@@ -9,6 +9,7 @@ from jinja2 import Environment, FileSystemLoader
 
 from steglib.capability import CapabilityManager
 from steglib.config import ConfigResolver
+from steglib.event_types import *
 from steglib.constants import (
     BACKEND_DIR,
     GLOBAL_CONF_FILENAME,
@@ -316,7 +317,7 @@ class PackageEngine:
                 if cap_name in enabled:
                     if reconfigure:
                         from steglib import events
-                        events.emit("integration_disabled_missing_providers", package=instance_name, capability=cap_name)
+                        events.emit(IntegrationDisabledMissingProvidersEvent(package=instance_name, capability=cap_name))
                         del enabled[cap_name]
                 continue
 
@@ -361,7 +362,7 @@ class PackageEngine:
         for cap_name in list(enabled.keys()):
             if cap_name not in consumes:
                 from steglib import events
-                events.emit("integration_removed_no_longer_required", package=instance_name, capability=cap_name)
+                events.emit(IntegrationRemovedNoLongerRequiredEvent(package=instance_name, capability=cap_name))
                 del enabled[cap_name]
 
         return enabled

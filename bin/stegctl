@@ -60,8 +60,8 @@ def main():
             if result and isinstance(result, dict):
                 from rich.console import Console
                 from rich.table import Table
-                table = Table(title="Package Status")
-                table.add_column("Package", style="cyan", no_wrap=True)
+                table = Table(title="Instance Status")
+                table.add_column("Instance", style="cyan", no_wrap=True)
                 table.add_column("State", style="magenta")
                 table.add_column("Containers (Running/Total)", style="green")
                 for pkg, info in result.items():

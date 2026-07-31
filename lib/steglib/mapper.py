@@ -5,6 +5,7 @@ from typing import Optional
 from steglib.constants import TARGET_FOLDERS
 
 
+from steglib.event_types import *
 class DriveMapper:
     """Manages the discovery and mounting of stegOS-labeled block devices.
 
@@ -66,7 +67,7 @@ class DriveMapper:
                             if p.startswith('LABEL="'):
                                 return p.split('"')[1]
         except OSError as e:
-            events.emit("log_warning", message="Failed to read config file: %s" % ( e))
+            events.emit(LogWarningEvent(message="Failed to read config file: %s" % ( e)))
         return None
 
     def _is_mounted(self, target: str) -> bool:
@@ -100,18 +101,18 @@ class DriveMapper:
         os.makedirs(target_mnt, exist_ok=True)
 
         if self._is_mounted(target_mnt):
-            events.emit("log_info", message="Target already mounted: %s" % ( target_mnt))
+            events.emit(LogInfoEvent(message="Target already mounted: %s" % ( target_mnt)))
             return
 
         try:
             run_cmd(["mount", "--bind", src_dir, target_mnt], error_msg=f"Failed to bind mount {src_dir} to {target_mnt}", check=True)
-            events.emit("log_info", message="Bind mounted: %s" % ( target_mnt))
+            events.emit(LogInfoEvent(message="Bind mounted: %s" % ( target_mnt)))
         except Exception:
             pass
 
     def mount_all(self) -> None:
         """Discovers and mounts all stegOS-labeled devices."""
-        events.emit("log_info", message="Starting device discovery...")
+        events.emit(LogInfoEvent(message="Starting device discovery..."))
 
         # Setup root tmpfs
         os.makedirs(self.root_dir, exist_ok=True)
@@ -131,7 +132,7 @@ class DriveMapper:
         try:
             res = run_cmd(["blkid"], check=True)
         except Exception as e:
-            events.emit("log_error", message="Failed to run blkid: %s" % ( e))
+            events.emit(LogErrorEvent(message="Failed to run blkid: %s" % ( e)))
             return
 
         for line in res.stdout.splitlines():
@@ -160,7 +161,7 @@ class DriveMapper:
                 continue
 
             short_uuid = loop_uuid[:8] if loop_uuid else "unknown"
-            events.emit("log_info", message="Processing device: %s (%s)" % ( dev_path, short_uuid))
+            events.emit(LogInfoEvent(message="Processing device: %s (%s)" % ( dev_path, short_uuid)))
 
             custom_name = ""
             if loop_label.startswith(f"{self.label_prefix}."):
@@ -176,7 +177,7 @@ class DriveMapper:
                 try:
                     run_cmd(["mount", "-o", drive_opts, dev_path, base_mnt], error_msg=f"Failed to mount {dev_path} to {base_mnt}", check=True)
                 except Exception as e:
-                    events.emit("log_error", message="Failed to mount physical device %s. Skipping." % ( dev_path))
+                    events.emit(LogErrorEvent(message="Failed to mount physical device %s. Skipping." % ( dev_path)))
                     continue
 
             # Assess structure (Structure A or B)
@@ -190,11 +191,11 @@ class DriveMapper:
                 final_group = short_uuid
                 if custom_name:
                     final_group = f"{custom_name}_{short_uuid}"
-                events.emit("log_info", message="Structure A -> Group: %s" % ( final_group))
+                events.emit(LogInfoEvent(message="Structure A -> Group: %s" % ( final_group)))
                 for folder in TARGET_FOLDERS:
                     self._setup_bind_mount(os.path.join(base_mnt, folder), final_group, folder)
             else:
-                events.emit("log_info", message="Structure B -> Scanning subdirectories...")
+                events.emit(LogInfoEvent(message="Structure B -> Scanning subdirectories..."))
                 for item in os.listdir(base_mnt):
                     group_path = os.path.join(base_mnt, item)
                     if not os.path.isdir(group_path):
@@ -212,15 +213,15 @@ class DriveMapper:
                             desired_group = f"{custom_name}.{item}"
                         final_group = f"{desired_group}_{short_uuid}"
 
-                        events.emit("log_info", message="Sub-Group: %s -> Namespace: %s" % ( item, final_group))
+                        events.emit(LogInfoEvent(message="Sub-Group: %s -> Namespace: %s" % ( item, final_group)))
                         for folder in TARGET_FOLDERS:
                             self._setup_bind_mount(os.path.join(group_path, folder), final_group, folder)
 
-        events.emit("log_info", message="Mapping operations completed.")
+        events.emit(LogInfoEvent(message="Mapping operations completed."))
 
     def unmount_all(self) -> None:
         """Unmounts all stegOS bind mounts under the root directory."""
-        events.emit("log_info", message="Starting cleanup...")
+        events.emit(LogInfoEvent(message="Starting cleanup..."))
         
         mounts_to_remove = []
         try:
@@ -232,11 +233,11 @@ class DriveMapper:
                         if mnt_path.startswith(self.root_dir):
                             mounts_to_remove.append(mnt_path)
         except OSError as e:
-            events.emit("log_error", message="Failed to read /proc/mounts: %s" % ( e))
+            events.emit(LogErrorEvent(message="Failed to read /proc/mounts: %s" % ( e)))
             return
 
         if not mounts_to_remove:
-            events.emit("log_info", message="No active mounts found under %s." % ( self.root_dir))
+            events.emit(LogInfoEvent(message="No active mounts found under %s." % ( self.root_dir)))
             return
 
         # Sort descending by length to unmount deepest paths first
@@ -245,6 +246,6 @@ class DriveMapper:
         for target in mounts_to_remove:
             try:
                 run_cmd(["umount", target], error_msg=f"Failed to unmount {target}", check=True)
-                events.emit("log_info", message="Unmounted: %s" % ( target))
+                events.emit(LogInfoEvent(message="Unmounted: %s" % ( target)))
             except Exception:
-                events.emit("log_warning", message="Target busy: %s" % ( target))
+                events.emit(LogWarningEvent(message="Target busy: %s" % ( target)))
