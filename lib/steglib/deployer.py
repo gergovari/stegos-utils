@@ -179,7 +179,7 @@ class DockerComposeDeployer(DeployerBase):
                 stegos=stegos_env,
             )
 
-            if dest == "docker-compose.yml":
+            if os.path.basename(dest) in ("docker-compose.yml", "docker-compose.yaml"):
                 try:
                     compose_data = yaml.safe_load(rendered)
                     if not isinstance(compose_data, dict):
