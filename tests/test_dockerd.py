@@ -12,7 +12,7 @@ def test_get_network_params():
 
 def test_get_docker_env():
     env = get_docker_env("/some/path/my_group")
-    assert env["DOCKER_HOST"] == "unix:///some/path/my_group/backend/dockerd/docker.sock"
+    assert env["DOCKER_HOST"] == "unix:///some/path/my_group/.backend/dockerd/docker.sock"
 
 @patch("steglib.dockerd.subprocess.run")
 @patch("steglib.dockerd.os.makedirs")
@@ -22,7 +22,7 @@ def test_ensure_running_already_running(mock_makedirs, mock_run):
         subprocess.CompletedProcess(args=[], returncode=0, stdout=b"")  # docker info
     ]
     env = ensure_running("/path/to/group")
-    assert env["DOCKER_HOST"] == "unix:///path/to/group/backend/dockerd/docker.sock"
+    assert env["DOCKER_HOST"] == "unix:///path/to/group/.backend/dockerd/docker.sock"
     mock_makedirs.assert_called()
 
 @patch("steglib.dockerd.subprocess.run")
@@ -57,7 +57,7 @@ def test_ensure_running_starts_daemon(mock_file, mock_sleep, mock_kill, mock_rem
     mock_run.side_effect = run_side_effect
     
     env = ensure_running("/path/to/group")
-    assert env["DOCKER_HOST"] == "unix:///path/to/group/backend/dockerd/docker.sock"
+    assert env["DOCKER_HOST"] == "unix:///path/to/group/.backend/dockerd/docker.sock"
     
     # Verify that the rm -rf was called to wipe the data_root
     rm_calls = [c for c in mock_run.call_args_list if c[0][0][0] == "rm" and "-rf" in c[0][0]]

@@ -127,7 +127,7 @@ class DockerComposeDeployer(DeployerBase):
                     tmpl = self.env.from_string(value)
                     stegos_env = {
                         "group_name": self.group_name,
-                        "docker_sock": f"/stegos/persistent/{self.group_name}/backend/dockerd/docker.sock"
+                        "docker_sock": f"/stegos/persistent/{self.group_name}/.backend/dockerd/docker.sock"
                     }
                     cap_exports[key] = tmpl.render(
                         config=self.final_conf,
@@ -171,7 +171,7 @@ class DockerComposeDeployer(DeployerBase):
             tmpl = self.env.from_string(content)
             stegos_env = {
                 "group_name": self.group_name,
-                "docker_sock": f"/stegos/persistent/{self.group_name}/backend/dockerd/docker.sock"
+                "docker_sock": f"/stegos/persistent/{self.group_name}/.backend/dockerd/docker.sock"
             }
             rendered = tmpl.render(
                 config=self.final_conf,

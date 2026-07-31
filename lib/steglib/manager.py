@@ -317,7 +317,7 @@ class PackageManager:
 
         unmanaged = []
         for name in os.listdir(self.engine.group_dir):
-            if name in [GLOBAL_CONF_FILENAME, ".docker-cache"]:
+            if name == GLOBAL_CONF_FILENAME or name.startswith('.'):
                 continue
             path = os.path.join(self.engine.group_dir, name)
             if not os.path.isdir(path):

@@ -22,7 +22,7 @@ def _get_network_params(group_dir: str) -> list:
 
 def get_docker_env(group_dir: str) -> dict:
     """Returns the environment variables required to interact with this group's dockerd."""
-    backend_dir = os.path.join(group_dir, "backend", "dockerd")
+    backend_dir = os.path.join(group_dir, ".backend", "dockerd")
     sock_file = os.path.join(backend_dir, "docker.sock")
     
     env = os.environ.copy()
@@ -46,7 +46,7 @@ def ensure_running(group_dir: str, verbose: bool = False) -> dict:
     Returns the environment dict with DOCKER_HOST set.
     """
     with _dockerd_lock:
-        backend_dir = os.path.join(group_dir, "backend", "dockerd")
+        backend_dir = os.path.join(group_dir, ".backend", "dockerd")
         data_root = os.path.join(backend_dir, "data")
         exec_root = os.path.join(backend_dir, "exec")
         sock_file = os.path.join(backend_dir, "docker.sock")
