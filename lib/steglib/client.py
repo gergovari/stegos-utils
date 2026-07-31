@@ -74,6 +74,17 @@ class EventFormatter:
             self.console.print("[yellow]No instances found.[/yellow]")
             return
             
+
+        if event_type == "unmanaged_directories_header":
+            self.console.print("\n[bold yellow]Unmanaged Directories Found:[/bold yellow]")
+            return
+        if event_type == "unmanaged_directory":
+            self.console.print(f"  [yellow]•[/yellow] {getattr(event, 'path')}")
+            return
+        if event_type == "clean_aborted":
+            self.console.print("[yellow]Clean aborted.[/yellow]")
+            return
+
         # Success
         if event_type in ("package_installed", "instance_upgraded", "reconfigured", "cleaned_directories", "repo_updated", "group_upgraded", "dependent_reconfigured", "dependent_restarted", "all_repos_up_to_date", "no_unmanaged_directories", "instance_uninstalled"):
             if event_type == "all_repos_up_to_date": msg = "All apps are already up to date."
@@ -81,6 +92,10 @@ class EventFormatter:
             elif event_type == "dependent_reconfigured": msg = f"Successfully reconfigured dependent instance {getattr(event, 'instance_id', getattr(event, 'package', ''))}"
             elif event_type == "dependent_restarted": msg = f"Successfully restarted dependent instance {getattr(event, 'instance_id', getattr(event, 'package', ''))}"
             elif event_type == "instance_uninstalled": msg = f"Successfully uninstalled {getattr(event, 'instance_id', getattr(event, 'package', ''))}"
+            elif event_type == "package_installed": msg = f"Successfully installed {getattr(event, 'package', 'unknown')} as {getattr(event, 'instance_id', 'unknown')}!"
+            elif event_type == "cleaned_directories": msg = f"Successfully removed {getattr(event, 'count', 0)} unmanaged directories."
+            elif event_type == "reconfigured": msg = f"Successfully reconfigured {getattr(event, 'count', 0)} instance(s) in group '{getattr(event, 'group', '')}'."
+            elif event_type == "group_upgraded": msg = f"Successfully upgraded {len(getattr(event, 'instances', []))} instance(s)."
             else:
                 msg = getattr(event, 'message', f"Successfully completed {event_type}")
                 if hasattr(event, 'package') and getattr(event, 'package'): msg = f"Successfully operated on {getattr(event, 'package')}"
@@ -95,6 +110,9 @@ class EventFormatter:
             elif event_type == "no_instances_upgraded": msg = "No instances needed upgrading."
             elif event_type == "stopping_instance": msg = f"Stopping instance {getattr(event, 'instance_id', getattr(event, 'package', ''))}..."
             elif event_type == "removing_instance": msg = f"Removing instance {getattr(event, 'instance_id', getattr(event, 'package', ''))}..."
+            elif event_type == "directory_deleted": msg = f"Deleted {getattr(event, 'path', '')}"
+            elif event_type == "starting_package": msg = f"Starting {getattr(event, 'package', getattr(event, 'instance_id', ''))}..."
+            elif event_type == "stopping_package": msg = f"Stopping {getattr(event, 'package', getattr(event, 'instance_id', ''))}..."
             else:
                 msg = getattr(event, 'message', f"Processing {event_type}...")
                 if hasattr(event, 'package') and getattr(event, 'package'):
@@ -121,17 +139,17 @@ class EventFormatter:
             if self.verbose: self.console.print("[dim]  └── ⏳ Starting backend...[/dim]", markup=False)
             return
         if event_type == "backend_loading_cache":
-            if self.verbose: self.console.print(f"[dim][{getattr(event, 'package', 'unknown')}] Backend is loading cache...[/dim]", markup=False)
+            if self.verbose: self.console.print(f"[{getattr(event, 'package', 'unknown')}] Backend is loading cache...", style="dim", highlight=False)
             return
         if event_type == "backend_log_line":
-            self.console.print(f"[dim]{getattr(event, 'line', '')}[/dim]", markup=False)
+            self.console.print(getattr(event, 'line', ''), style="dim", highlight=False)
             return
         if event_type.startswith("log_"):
             if event_type == "log_debug" and not self.verbose: return
             msg = getattr(event, 'message', "")
-            if event_type == "log_error": self.console.print(f"[red]{msg}[/red]", markup=False)
-            elif event_type == "log_warning": self.console.print(f"[yellow]{msg}[/yellow]", markup=False)
-            else: self.console.print(f"[dim]{msg}[/dim]", markup=False)
+            if event_type == "log_error": self.console.print(f"[red]{msg}[/red]", highlight=False)
+            elif event_type == "log_warning": self.console.print(f"[yellow]{msg}[/yellow]", highlight=False)
+            else: self.console.print(msg, style="dim", highlight=False)
             return
 
         # Fallback for unknown events

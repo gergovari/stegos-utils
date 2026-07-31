@@ -68,10 +68,11 @@ def main():
                     table.add_row(pkg, info.get("state", "unknown"), f"{info.get('running', 0)}/{info.get('total', 0)}")
                 Console().print(table)
             else:
-                print("No active packages found or status not available.")
+                print("No active instances found or status not available.")
         elif action in ["start", "stop", "restart"]:
-            pkg_str = f"'{args.package}'" if args.package else "all packages"
-            print(f"\n[+] Successfully executed '{action}' on {pkg_str}.")
+            pkg_str = f"'{args.package}'" if args.package else "all instances"
+            from rich.console import Console
+            Console().print(f"\n[bold green]✓[/bold green] [white]Successfully executed '{action}' on {pkg_str}.[/white]")
     except Exception as e:
         if getattr(e, 'details', None):
             if args.verbose:
